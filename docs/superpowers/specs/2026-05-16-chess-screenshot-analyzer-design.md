@@ -645,6 +645,10 @@ Plans are written one at a time, in order. After each slice ships, the next plan
 - **Opening explorer integration** — Lichess opening DB API.
 - **Position similarity / pattern recognition** — Gemini embeddings over FEN-derived position descriptors; "have I seen this position before?"
 - **Voice input** — assistant-ui's `DictationAdapter` for hands-free analysis.
+- **Board-based input affordances (highest-bandwidth medium, applied to user input).** Today, our tools push *information* via boards/arrows (principle #3). The inverse is also available: when the agent asks the user a question whose answer is a square or a piece — "which piece is hanging?", "what would you play here?", "tap the square you're considering" — the user should be able to *tap the board* instead of typing. Implementation directions:
+  - A persistent board at the top of the chat surface (always-rendered current position), so any agent question with a spatial answer is one tap away.
+  - A new interactive tool `selectSquare({ question, allow? })` returning a `Square` (or a list, for multi-select), and `selectPiece({ question })` returning a piece type / square pair. Slots into the existing `addToolResult` pattern (Plan 6 `showOptions` / `editPosition` shape).
+  - The agent's prompt rules add: "when asking the user about a square or piece, prefer `selectSquare`/`selectPiece` over free text." Same logic as `showOptions` vs typing.
 - **Public release / commercialization** — license decision on chess libs (stay GPL, or swap to MIT alternatives).
 
 ---
