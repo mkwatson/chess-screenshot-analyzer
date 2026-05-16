@@ -1,1 +1,9 @@
+gitleaks git --staged --redact --no-banner --config .gitleaks.toml || {
+  echo ""
+  echo "❌ gitleaks found potential secret(s) in staged changes."
+  echo "   Review the redacted findings above. If false positive,"
+  echo "   add an entry to .gitleaks.toml's [allowlist] section."
+  exit 1
+}
+
 pnpm exec lint-staged

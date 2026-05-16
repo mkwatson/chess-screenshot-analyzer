@@ -6,6 +6,25 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ---
 
+## ⚠️ Hard rule: nothing sensitive in this repo, ever
+
+The repository is **public on GitHub**. Treat every byte as eventually-Google-able and permanent in git history.
+
+**Never commit:** API keys, tokens, credentials, OAuth secrets, production user data, personal emails or phone numbers beyond what's already on Mark's public profile, internal endpoint URLs, debug hosts, or anything from `.env.local` by any path.
+
+**Even commit messages and PR descriptions are public.** Don't paste a real value "just to share."
+
+Three enforcement layers are wired:
+1. `gitleaks` pre-commit hook (catches secrets locally before any commit).
+2. `gitleaks` GitHub Actions workflow (catches anything that bypassed the local hook).
+3. GitHub native secret scanning + push protection (server-side block by provider signatures).
+
+If gitleaks fires on a false positive, edit `.gitleaks.toml`'s `[allowlist]` to permit that specific path or pattern — **never** weaken the rules globally.
+
+If a real secret is ever pushed: **rotate it immediately**, then ask Mark before doing anything to git history (force-push-history rewrites are dangerous).
+
+---
+
 # Chess Screenshot Analyzer
 
 A Progressive Web App for iOS Safari that analyzes chess positions from screenshots. Paste a board → get coached by an AI agent with a real chess engine. Personal project (Mark Watson / Vidably), architected so any later feature is additive.

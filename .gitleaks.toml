@@ -1,0 +1,14 @@
+# .gitleaks.toml — extends default ruleset, allows .env.example placeholders.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Files that are intentionally cleartext"
+paths = [
+  '''.gitleaks\.toml$''',
+  '''\.env\.example$''',
+  '''AGENTS\.md$''',
+  '''CLAUDE\.md$''',
+  '''docs/superpowers/.*\.md$''',
+]
