@@ -6,9 +6,17 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 
 ### Current execution state
 
-- **Active plan:** `docs/superpowers/plans/2026-05-16-repo-and-deploy-pipeline.md` (Plan 0 — Repo & deploy pipeline)
-- **Resume point:** Plan 0 Task 5 (Tasks 1-4 complete: Node 24 LTS, gh repo created and pushed, Next.js scaffold, strict tsconfig).
+- **Plan 0 (rails) — SHIPPED.** Production live at `https://chess-screenshot-analyzer-n3510j4lc-mark-6951s-projects.vercel.app` (and any future deployment URLs). PWA installed on Mark's iPhone. Three-layer secret-leak protection active (gitleaks pre-commit + CI + GitHub native scanning). CI gates merges on type-check + lint + format + build + gitleaks.
+- **Next plan:** Slice 1 — Static board + engine call. Plan document not yet written; the writing-plans skill produces it from spec Section 10.
 - **Latest commit:** see `git log -1`.
+
+### Known follow-ups (small, deferred)
+
+- **Node 20 deprecation in GitHub Actions** (`actions/checkout@v4`, `pnpm/action-setup@v4`, etc. still on Node 20). GitHub flips default to Node 24 on **2026-06-02**; actions are expected to ship Node 24 builds by then. Re-check workflow runs after that date.
+- **Next.js 16 `pnpm build` rewrites `tsconfig.json`** (sets `jsx: react-jsx`, adds `.next/dev/types/**/*.ts`). Each rebuild produces a dirty git state until reverted. Investigate when it starts causing friction.
+- **shadcn CLI in `dependencies`** instead of `devDependencies` (shadcn's default install does this). Minor production-bundle bloat; cleanup if it becomes annoying.
+- **`bun`'s `vercel` shim at `/Users/mark/.bun/bin/vercel` shadows the pnpm-global newer Vercel CLI** on PATH. Clean up by `rm`'ing the bun shim or reordering PATH.
+- **GitHub non-provider secret-pattern scanning** not enabled (toggle not visible on Hobby public repos; likely requires GHAS).
 
 ### Behavioral preferences
 
