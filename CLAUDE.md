@@ -12,8 +12,9 @@ A Progressive Web App for iOS Safari: paste a chess screenshot, get coached by a
 
 **Vertical thin slices, not horizontal layers.** Each plan delivers an end-to-end user-visible capability (UI + backend + persistence as needed) — not "all the foundation, then all the agent." Each slice is shippable to a Vercel preview URL on its own.
 
-The 10 slices (see Section 10 of the spec for details):
+11 plans total: Plan 0 sets up the rails; Plans 1-10 are vertical product slices (see Section 10 of the spec).
 
+0. Repo & deploy pipeline (rails, not a product slice)
 1. Static board + engine call (no AI, no vision, no chat)
 2. Vision parse (paste image → FEN)
 3. One-turn coach chat

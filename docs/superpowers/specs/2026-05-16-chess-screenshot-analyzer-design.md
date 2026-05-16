@@ -612,11 +612,14 @@ Rationale (per principles in Section 1.1):
 - Risk surfaces continuously, one piece at a time, rather than piling up.
 - Each slice = one sit-down session; finished slices are demos, not WIPs.
 
-**The 10 slices (each = one plan document):**
+**The plans (each = one plan document):**
 
-| # | Slice | Demonstrable result |
+Plan 0 sets up the rails; Plans 1-10 are the vertical product slices.
+
+| # | Plan | Demonstrable result |
 |---|---|---|
-| 1 | Static board + engine call | Hardcoded FEN → Vercel function → Stockfish → board with arrow. No AI, no vision, no chat. Proves the full deployment stack. |
+| 0 | Repo & deploy pipeline | GitHub repo, Vercel auto-deploy, tooling baseline (TS strict, ESLint, Prettier, husky, CI), basic PWA manifest, eruda dev console. Every subsequent commit auto-deploys to a phone-installable URL. |
+| 1 | Static board + engine call | Hardcoded FEN → Vercel function → Stockfish → board with arrow. No AI, no vision, no chat. Proves the full product stack on top of Plan 0's rails. |
 | 2 | Vision parse | Replace hardcoded FEN with paste-image → Gemini vision → FEN → render. |
 | 3 | One-turn coach chat | Replace static page with chat input → agent loop (parse + analyze + respond) → message rendered inline. |
 | 4 | Multi-turn + Dexie persistence | Real assistant-ui shell, follow-ups, persistence via `ChatRepository`. |
