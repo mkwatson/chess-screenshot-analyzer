@@ -112,13 +112,25 @@ All deferred features should remain *additive* in the architecture — adding an
 | Service worker | `@serwist/next` (next-pwa is abandoned) | MIT |
 | Observability | PostHog — LLM Analytics (`@posthog/ai/otel`) + Session Replay + Error Tracking + Web Analytics | — |
 
-### 3.1 License posture (chessground + chessops + Stockfish are GPL-3.0)
+### 3.1 Vendor account provisioning
+
+All vendor accounts are provisioned as siblings under the existing Vidably organization/team where applicable, with fresh credentials per service and zero shared state with production Vidably resources. Concretely:
+
+- **Vercel:** a new project under the Vidably team. Separate domain, separate env vars, separate deploy hooks.
+- **PostHog:** a new project within the Vidably organization. Separate API key, separate event stream. Dashboards stay isolated.
+- **Google AI Studio:** a separate API key in a separate Google Cloud project under the Vidably account.
+- **Upstash Redis:** a separate database provisioned via the Vercel Marketplace integration for this project.
+- **GitHub:** a separate repository.
+
+This is free, one-click in each platform's UI, and keeps the project's billing/logs/data physically isolated from Vidably's production work. No complexity tax.
+
+### 3.2 License posture (chessground + chessops + Stockfish are GPL-3.0)
 
 The app is intended to be public-source — the GitHub repo for this project will be public, satisfying GPL-3.0's source-availability obligation. A `Source` link in the app footer points at the repo. No CLA, no commercial fee, no obstruction.
 
 If the product ever pivots to a closed-source commercial release, the chess libraries swap to `react-chessboard` + `chess.js` (both MIT). Plan for this is a single PR's worth of work given the thin React wrapper isolates the renderer.
 
-### 3.2 Vercel platform features adopted in v0
+### 3.3 Vercel platform features adopted in v0
 
 - **AI Gateway** — wraps Gemini for observability, fallback, ZDR, no markup
 - **BotID Basic** — wraps `/api/chat` to block automated abuse
@@ -128,7 +140,7 @@ If the product ever pivots to a closed-source commercial release, the chess libr
 - **Preview URLs + QR test loop** — every push gets a URL, dashboard renders QR for phone-install
 - **`vercel.ts`** config, `vercel env pull` workflow
 
-### 3.3 Vercel features explicitly deferred
+### 3.4 Vercel features explicitly deferred
 
 - Vercel Blob (screenshots stored as base64 in Dexie for v0)
 - Edge Config (no feature flags or shared config that warrants it; the one PostHog feature flag we use is hosted by PostHog)
@@ -158,17 +170,31 @@ All five tools are defined server-side via the AI SDK v6 `tool()` factory. Three
 
 ### 4.2 Model strategy
 
-Routed via the Vercel AI Gateway, all calls go through `@ai-sdk/google`.
+Routed via the Vercel AI Gateway, all calls go through `@ai-sdk/google`. **Posture: default Flash, escalate to Pro on Stockfish-output heuristics.** Not the other way around.
 
 | Role | Model | `thinkingLevel` | When |
 |---|---|---|---|
-| Tool routing / interstitial steps | `gemini-3-flash` | `low` | Default for most steps in the loop |
-| Vision parse | `gemini-3-flash` | `minimal` | Inside `parseScreenshot.execute` (separate model call from the agent loop) |
-| Final coaching response | `gemini-3-flash` | `low` to `medium` | Default. Flash is plenty for ~90% of coaching turns. |
-| Deep reasoning escalation | `gemini-3.1-pro` | `high` | When the agent self-determines via `prepareStep` that the position is complex (large eval swings between PV lines, multi-step calculation, or user explicitly asks for depth) |
-| Hardest analysis | `gemini-3-deep-think` | (always-on extended) | Reserved; surfaced only if Pro proves insufficient in practice |
+| Tool routing / interstitial steps | `gemini-3-flash` | `low` (or off) | Default for most steps in the loop. Thinking adds latency without quality lift on one-shot tool selection. |
+| Vision parse | `gemini-3-flash` | `minimal` | Inside `parseScreenshot.execute` (separate model call from the agent loop). Verify with chessops legality check instead of letting the model reason longer. |
+| Final coaching response (default) | `gemini-3-flash` | `low` | Default. Flash matches 2.5 Pro on most benchmarks and is plenty for synthesizing pre-computed Stockfish analysis into prose. |
+| Final coaching response (sharp position) | `gemini-3.1-pro` | `medium` | Triggered via `prepareStep` heuristics on Stockfish output (see below). Multi-candidate explanation needs comparison reasoning. |
+| Async "deeper look" affordance | `gemini-3-deep-think` | (always-on extended) | NEVER in the user-facing critical path. Surfaced only as an optional CTA after a Pro answer ("want a deeper analysis?"). |
 
-**Mid-loop model swap** uses AI SDK v6 `prepareStep({ model })`. The agent doesn't "ask" to escalate — heuristics in `prepareStep` (e.g., presence of `analyzePosition` result with high eval swing) trigger the swap for the final response step.
+**Escalation heuristics inside `prepareStep`.** Implemented as deterministic rules on tool results — not model self-judgment, not a router LLM (both add cost or latency without measurable benefit; Stockfish's output is a quantitative difficulty oracle the LLM can only guess at).
+
+Escalate Flash → Pro for the synthesis step when ANY of:
+- Stockfish eval delta (best vs second-best line) < 30 centipawns AND ≥ 3 candidate moves are within 50cp → sharp/critical position
+- Absolute eval swing from prior position to current > 150 centipawns → tactical moment
+- User message matches `/why|explain|plan|endgame|fortress|zugzwang|strategy/i`
+- Step count in this turn > 4 (loop has dragged; smarter brain may close it)
+
+Escalate Pro → Deep Think *only* asynchronously (out-of-band) when:
+- Pro response contradicts Stockfish's best move (telemetry-detected disagreement), OR
+- User explicitly requests "deepest analysis" / "is this winning?" on a non-trivial endgame.
+
+**Temperature: always 1.0.** Gemini 3's reasoning is tuned for 1.0; lowering causes loops and degraded tool selection. Counter-intuitive vs. GPT-era convention; non-negotiable on this provider.
+
+**Persist `thoughtSignature` across turns.** Gemini 3 enforces this on function calls; missing signatures return HTTP 400. AI SDK v6 preserves them as long as we pass full message history back unmodified and don't strip assistant message parts in any custom message massaging.
 
 ### 4.3 Context strategy
 
@@ -176,32 +202,81 @@ Routed via the Vercel AI Gateway, all calls go through `@ai-sdk/google`.
 - **Stable prefix structure:** every request begins with the same byte-exact system prompt + tool declaration block. Implicit caching kicks in automatically after the first call.
 - **Explicit caching** (`cachedContents/{id}`, 1h TTL) for the system prompt + tool declarations once they exceed 32K tokens or implicit cache hits prove insufficient in telemetry. Until then, implicit caching alone is enough.
 - **File API for screenshots:** when a user pastes an image, upload via Gemini File API once, reference the URI across `parseScreenshot` and all downstream turns about that position. Avoids re-uploading base64 bytes (which would defeat caching).
+- **`prepareStep` strips prior image bytes after the parse step.** Once `parseScreenshot` has returned a FEN, subsequent steps don't need the screenshot in the model's context — only the FEN. `prepareStep` rewrites prior tool-result parts to replace `{ image_bytes }` with `{ fen, sideToMove }`. Single biggest token-cost lever in the system.
 - **Tool result shaping:** every tool's `toModelOutput` returns a compact text representation (FEN string, single eval, top-3 PV lines) — never the full UI payload. The rich UI parts live in client state for rendering; the model sees text.
+- **`prepareStep` also restricts `activeTools` between steps.** After `parseScreenshot` succeeds, the model only sees `{analyzePosition, showBoard, showOptions, editPosition}` — `parseScreenshot` is removed from the active set so the model can't loop on re-parsing. After `analyzePosition`, restrict further as appropriate.
 - **Memory:** v0 has no long-term memory beyond message history. v1+ may add Letta/Mem0 as a memory layer; the integration point is a single `loadHistory()` wrapper that the agent endpoint calls. No part of the tool surface changes when memory lands.
 
-### 4.4 System prompt sketch
+### 4.4 System prompt structure
 
-The system prompt establishes:
-- Role: a chess coach, not a chatbot.
-- Tone: helpful and direct; corrections happen because the user is respected; no flattery.
-- Mobile density rule: prefer showing a board over describing a position in prose; prefer offering `showOptions` over asking the user to type when the question has 2-4 discrete answers; keep prose tight.
-- Conversation flow ownership: the agent decides when to confirm a position (using `editPosition` when `parseScreenshot` returns low confidence in key squares), when to offer mode buttons (when the user's intent is genuinely ambiguous), and when to just answer.
-- Coaching repertoire: enumerated coaching moves the agent can make — direct answer, single hint, Socratic ladder, candidate-move drill, motif spotting, principle-first, adversarial defense, calculation drill, plan articulation, layered analysis ("club player vs master vs engine"), show-don't-tell. The agent picks contextually.
-- Tool descriptions repeated inline with usage guidance, not just signatures — *what does good usage look like* for each tool.
-- Style for output: short prose, board diagrams over descriptions, suggestions emitted via the suggestions adapter (not inline in prose).
+Per industry consensus and Gemini-specific guidance, the prompt is delineated by markdown headers (or XML tags) into eight sections, in this order:
 
-The full prompt text is implementation detail for the planning step; this spec fixes its shape and responsibilities.
+1. **Identity & role** — 3 lines max. "You are a chess coach. Conversational, mobile-first, never condescending. Helpful > friendly > sycophantic."
+2. **Hard rules** — non-negotiable constraints. Examples: "NEVER evaluate a move's quality without calling `analyzePosition` first. NEVER invent a FEN. NEVER claim a position is winning without engine evidence."
+3. **Tool guidance** — for each tool: trigger conditions and dependency order, not just capability. `parseScreenshot` before `analyzePosition`; `analyzePosition` before any move-quality claim; `showOptions` only when offering 2-5 discrete choices.
+4. **Workflow / decision policy** — the per-turn loop ("if user paste an image: parse → confirm if low confidence via `editPosition` → analyze → respond"). Includes the agent's coaching repertoire: direct answer / single hint / Socratic ladder / candidate-move drill / motif spotting / principle-first / adversarial defense / calculation drill / plan articulation / layered analysis / show-don't-tell. The agent picks contextually.
+5. **Output contract** — mobile chat constraints: short paragraphs, board diagrams over descriptions, never walls of text, suggestions emitted via the suggestion adapter not inline prose, user question goes at end of prompt (Gemini 3 prefers).
+6. **Tone & UX** — friendly + direct; corrections respect the user; praise is earned and specific; never sycophantic agreement on bad moves.
+7. **Recovery / fallbacks** — what to do on ambiguous screenshots (call `editPosition`), engine timeouts (acknowledge + offer retry), off-topic asks (politely redirect), 2 failed parse attempts in one turn (give up, ask user to type FEN).
+8. **Examples** — 1-3 short worked turns covering the canonical paths. Examples carry more steering weight than rules.
 
-### 4.5 Telemetry
+**Do NOT include in the prompt:**
+- Chain-of-thought scaffolding ("think step by step", "first analyze then..."). Gemini 3 already does this via `thinkingLevel`; explicit CoT instructions cause over-thinking.
+- Verbose role-playing ("you are an expert grandmaster with decades of...").
+- Generic "be helpful, be concise" boilerplate — Gemini 3 defaults already cover this.
 
-Every `streamText`/`ToolLoopAgent` invocation enables `experimental_telemetry: { isEnabled: true, functionId: 'chess-chat', metadata: { posthog_distinct_id, posthog_trace_id } }`. The PostHog OTel processor (registered in `instrumentation.ts`) exports spans to PostHog LLM Analytics, surfacing:
-- Tokens (in, out, cached) per call
+The full prompt text is an implementation detail; this spec fixes its shape, ordering, and responsibilities. The prompt is treated as code: stored in source, versioned, evolved via the eval loop in Section 8.
+
+### 4.5 Tool design conventions
+
+Every tool follows the same template, derived from cross-provider best practices:
+
+**Naming:** `verbNoun` in camelCase (e.g., `parseScreenshot`). One atomic action per tool. Names sharply distinct — `showBoard` and `showOptions` can never be confused as siblings.
+
+**Description structure:**
+1. Opens with a verb describing the action.
+2. Explicit trigger condition: `"Call this when <X>."`
+3. Explicit negative example: `"Do NOT call this when <Y>."`
+4. One concrete usage example.
+
+Example for `parseScreenshot`:
+> Extract a chess position from an image attachment and return FEN. Call this when the user's latest message includes an image attachment AND the image plausibly contains a chess board with pieces on it. Do NOT call this for: chess diagrams the user already gave as FEN text, images of players/events, or pure piece-style references. Example: user uploads a phone screenshot of a Chess.com game and asks "what should I play?"
+
+**Schemas:**
+- Strict Zod schemas with `.strict()`. Every parameter has a `.describe(...)` that includes format examples ("FEN string, e.g., 'rnbqkbnr/...'").
+- Use `z.enum([...])` aggressively over `z.string()`. Each free-string parameter is a hallucination vector.
+- Minimum required parameters; mark everything optional that can be defaulted.
+
+**Response shapes:**
+- Every tool returns `{ ok: boolean, ... }`.
+- On success: structured data, plus optional `next_steps_hint` field.
+- On failure: `{ ok: false, reason: string, suggestion: string }` — never a stack trace. The model reads this and decides recovery (e.g., on `parseScreenshot` low-confidence: call `editPosition`).
+- All tool `execute` functions wrap their body in try/catch and convert thrown errors into `{ ok: false, ... }` results. Throwing leaks to the framework as a `tool-error` part and the model often retries forever.
+
+**`toModelOutput`:** every server-execute tool defines a `toModelOutput` that returns a terse, text-only or small-JSON view of the result. The model never sees full image bytes, full engine info-stream output, or full UI payloads. The UI gets the rich version through the original result; the model gets the compact one.
+
+### 4.6 Telemetry
+
+Every `streamText`/`ToolLoopAgent` invocation enables `experimental_telemetry: { isEnabled: true, functionId: 'chess-chat', metadata: { posthog_distinct_id, posthog_trace_id, turn_id } }`. The PostHog OTel processor exports spans surfacing:
+
+- Tokens (in, out, cached, thinking) per call
 - Latency (TTFT, total) per step and per turn
 - Cost per call
 - Tool call name, duration, success/error per step
-- Cache hit rate (Gemini `cachedContentTokenCount`)
+- Cache hit rate via Gemini's `cachedContentTokenCount`
+- Model used per step (Flash vs Pro) — confirms `prepareStep` is escalating correctly
 
-These metrics are critical for tuning `prepareStep` heuristics and confirming caching is actually engaged.
+Plus explicit application-level events emitted alongside the SDK telemetry:
+
+- `coaching.engine_disagreement` — Flash's praise-worthy move ≠ Stockfish's top move. Alert threshold 5%.
+- `coaching.latency_overspend` — Pro escalation when eval delta was actually <30cp. Indicates over-eager heuristic.
+- `routing.thinking_waste` — thinking tokens >5000 on a tool-routing step (should be <1000 with `thinkingLevel: 'low'`).
+- `vision.invalid_fen` — `parseScreenshot` output fails chessops legality check.
+- `tool.dead_loop` — same tool called >2× in one turn with identical args.
+- `interactive.abandoned` — `showOptions` or `editPosition` rendered but never resolved before chat closed.
+
+These are the dashboards we look at to tune the system prompt and `prepareStep` heuristics during the eval loop.
+
 
 ---
 
@@ -212,9 +287,9 @@ These metrics are critical for tuning `prepareStep` heuristics and confirming ca
 The PWA is single-route: `/`. There is no navigation in the traditional sense.
 
 - **Chat surface** occupies the full viewport. Composer is fixed at the bottom respecting safe-area-inset-bottom.
-- **Chat list** lives in a vaul bottom Drawer with snap points (`['20%', '60%', 1]`), opened by a button in the top-left of the chat shell. The peek snap shows the most recent chats with a board thumbnail.
-- **Settings** lives in a vaul bottom Drawer (single-snap), accessed from a button in the top-right.
+- **Chat list** lives in a vaul bottom Drawer with snap points (`['20%', '60%', 1]`), opened by a button in the top-left of the chat shell. The peek snap shows the most recent chats with a board thumbnail. The full snap exposes an overflow menu at the bottom with the few v0 utility actions: "Export all chats", "Clear all data", "About". No separate Settings surface — v0 doesn't have settings worth their own panel.
 - **Image preview** (tap the pasted screenshot) opens a shadcn `Dialog` with pinch-zoom — not a Drawer (Drawers near full-height have iOS quirks).
+- **`editPosition` interactive tool** uses a full-snap vaul Drawer (transient, dismissed once the user confirms).
 
 ### 5.2 Composer & paste UX
 
@@ -392,12 +467,14 @@ export async function POST(req: Request) {
   });
 
   return result.toUIMessageStreamResponse({
+    consumeStream: true,  // ensures DB write even if PWA disconnects mid-stream
+    generateMessageId: () => crypto.randomUUID(),
     onFinish: ({ messages: final }) => persistFinalMessages(id, final),
   });
 }
 ```
 
-`chessAgent` is a module-scope `ToolLoopAgent` with `tools`, `instructions` (system prompt), `stopWhen: hasToolCall('showOptions') || hasToolCall('editPosition') || stepCountIs(8)`, and a default model. `prepareStep` selectively swaps to Pro for the final response step on complex positions.
+`chessAgent` is a module-scope `ToolLoopAgent` (constructed once at module load, never per-request) with `tools`, `instructions` (system prompt), `stopWhen: [stepCountIs(8), hasToolCall('showOptions'), hasToolCall('editPosition')]`, and a default model. `prepareStep` handles three things: model swap (Flash → Pro on heuristics), active-tool restriction (removes `parseScreenshot` after it has succeeded once in the turn), and prior-image stripping (replaces image bytes with FEN text after parse step). `consumeStream: true` guarantees `onFinish` runs even if the user backgrounds the app mid-stream — critical for mobile PWA persistence.
 
 ### 7.2 Stockfish engine
 
@@ -492,27 +569,41 @@ Single provider for LLM Analytics + Session Replay + Error Tracking + Web Analyt
 
 Skipped: Surveys, Experiments (no traffic for stat-sig tests at v0).
 
+### 8.3 Eval approach (lightweight, error-analysis-driven)
+
+Agent quality cannot be designed up front — it must be measured against real traces and iterated. The eval approach is sized for solo-dev v0:
+
+1. **Log everything from day one.** Every turn writes: input messages, system prompt version, tool calls, tool inputs, tool outputs, model choice per step, final response, telemetry events. Stored in PostHog LLM Analytics (via OTel) and a local JSONL file in development.
+2. **Don't write evals upfront for hypothetical failures.** Use the system, capture 20-50 real traces, then open-code the actual failure modes. Pre-imagined evals over-fit to assumptions.
+3. **Golden set in repo.** `golden-set/` directory contains 20-30 hand-curated turns covering: clean Chess.com screenshots, blurry/cropped screenshots, ambiguous positions, user-supplied FEN, off-topic questions, sycophancy traps (user proposes a blunder), endgame scenarios. Grows organically from real failures.
+4. **Binary assertions first** (Python or TypeScript), not LLM-as-judge. Examples: "did `analyzePosition` get called before any move-quality claim?" "did the final FEN parse as legal?" "did the model agree with a user-proposed blunder?" Binary checks are deterministic, debuggable, and surface real regressions.
+5. **LLM-as-judge later** for fuzzy criteria (tone, pedagogical helpfulness) — only after binary metrics are stable.
+6. **Run the eval on every prompt or tool change.** Quick command runs the golden set; pre-commit hook (or manual) before pushing prompt changes. Fast enough that it never gets skipped.
+7. **One feedback button in the UI.** Thumbs-down + free-text on any assistant message. That's the inbox; triage weekly. Real-user fails feed the golden set.
+
+The eval loop is what tunes the system prompt and the `prepareStep` heuristics over time. The spec fixes the *shape* of the agent; the eval loop fixes its *quality*.
+
 ---
 
 ## 9. Build sequence (high-level)
 
-Detailed implementation plan comes next via the writing-plans skill. This is the build order so the plan can structure itself.
+Detailed implementation plan comes next via the writing-plans skill. This is the build order so the plan can structure itself. The order is optimized so that **a tappable PWA on the developer's phone exists at step 1**, and every subsequent step adds visible, testable behavior — not "build a backend for a week then plug in a UI."
 
-1. **Skeleton.** Next.js + TS + Tailwind + shadcn/ui + Vercel deployment. `vercel.ts`, env, BotID, Analytics, Speed Insights wired but inert.
-2. **Persistence layer.** Dexie schema, repository interface + Dexie adapter, streaming-write coalescer. Unit-testable in isolation.
-3. **Chess libs.** Thin Board React wrapper around chessground; cburnett piece set; chessops integration helpers.
-4. **Stockfish.** Warm singleton + `analyzePosition` server function. Test with hardcoded FENs.
-5. **Agent shell.** `/api/chat` with `ToolLoopAgent`, all five tools defined (compute tools wired to real implementations; render-only tools as stub schemas). System prompt v1. AI Gateway + Gemini provider.
-6. **Chat UI.** assistant-ui shell, tool UIs registered at app root, `useChat` wired to `/api/chat`, multi-thread runtime backed by Dexie repository.
-7. **Composer.** Paste-image handler, attachment adapter, drop zone, file picker fallback.
-8. **PWA.** Manifest, `@serwist/next`, A2HS banner, safe-area styling, visualViewport keyboard handling.
-9. **Resumable streams.** Vercel KV stream store, `useChat({ resume: true })`.
-10. **Suggestions.** Suggestion adapter wired to a small Gemini Flash call after each agent response.
-11. **Observability.** PostHog client init, `@posthog/ai/otel` server, source maps in build.
-12. **Polish.** sonner toasts, vaul drawers for chat list + settings, edit-position drawer, image preview dialog, keyboard handling edges, persist-storage request, exposed export.
-13. **System prompt iteration.** Use telemetry + session replays to tune the coaching prompt and `prepareStep` escalation heuristics.
+1. **Deployed PWA skeleton (Day 1).** Next.js + TS + Tailwind v4 + shadcn/ui + Vercel deployment. Manifest, viewport meta, safe-area styling, theme color. Static landing screen with the app title. A2HS-installable on iOS. **Preview URL → phone home screen the same hour the project starts.**
+2. **Chat shell with mock data.** assistant-ui mounted, hardcoded fake conversation rendered including a faked board, faked options chips, a faked editPosition drawer. No backend, no AI. The phone-installed app now *feels* like the product — every layout, gesture, safe-area issue surfaces immediately.
+3. **Board renderer integration.** Thin React wrapper around chessground; cburnett piece assets; chessops integration helpers (`chessgroundDests`, `parseFen`, etc.). Replace the faked board in mock data with a real chessground rendering of a hardcoded FEN. Phone-test touch quality.
+4. **Persistence layer.** Dexie schema, `ChatRepository` interface + Dexie adapter, streaming-write coalescer, `useLiveQuery` wiring. Replace mock conversations with real Dexie-backed ones (still hardcoded message content — no AI yet). Multi-thread runtime adapter for assistant-ui wired up so the chat-list Drawer shows real chats.
+5. **Stockfish backend.** Warm singleton in module scope, `analyzePosition(fen, opts)` server function exposed via a minimal test endpoint. Hit it from a debug page with hardcoded FENs; confirm depth/time/MultiPV behavior. Not yet wired to the agent.
+6. **Agent shell, first turn end-to-end.** `/api/chat` with `ToolLoopAgent`, all five tools defined and wired to real implementations (server tools to real services; render-only tools to assistant-ui registrations from step 2). System prompt v1 following the 8-section template. AI Gateway + `@ai-sdk/google` for Gemini. `prepareStep` with the model-routing heuristics. **Real conversation now works on phone preview URL.**
+7. **Composer + paste UX.** Paste-from-clipboard handler, `SimpleImageAttachmentAdapter`, drop zone for desktop, file picker fallback. Forced `mode: 'ANY'` for `parseScreenshot` when an image attachment is present.
+8. **PWA polish.** `@serwist/next` service worker, A2HS banner with iOS-specific instructions, `visualViewport`-based keyboard handling, persistent-storage request after first user message.
+9. **Resumable streams.** Upstash Redis store, `useChat({ resume: true })`, `consumeStream: true` on the response. Phone-test backgrounding mid-analysis.
+10. **Suggestions adapter.** Generates 3-4 follow-up chips after each agent response via a small Gemini Flash call.
+11. **Observability + first eval loop.** PostHog client init (autocapture, replay, errors). `instrumentation.ts` with `PostHogSpanProcessor`. Application-level event emission (engine_disagreement, latency_overspend, etc.). Begin logging real turns. Start a `golden-set/` directory in the repo and capture 5-10 real traces per usage session.
+12. **Mobile UI polish.** sonner toasts, vaul chat-list Drawer with snap points + overflow menu (export, clear), image preview Dialog, `editPosition` Drawer refinement, BotID Basic on `/api/chat`.
+13. **System prompt + heuristic iteration.** Using PostHog telemetry + session replays + golden set: tune the system prompt section by section, tighten `prepareStep` escalation heuristics, refine tool descriptions where the model misbehaves. This step never really "completes" — it's the ongoing eval loop.
 
-Each step from (5) onward is shippable to a Vercel preview URL for phone testing.
+After step 2, every step lands on the developer's phone via Vercel preview URLs (Deployment Protection keeps them private). The cycle is: code → push → preview URL → install on phone via QR code → tap.
 
 ---
 
@@ -528,7 +619,31 @@ Each step from (5) onward is shippable to a Vercel preview URL for phone testing
 
 ---
 
-## Appendix A — Principles checklist (for code review)
+## Appendix A — Failure-mode register
+
+The five failure modes our chess agent is most likely to hit, and the prevention strategy for each. Telemetry events (Section 4.6) detect occurrences; system-prompt rules (Section 4.4) prevent them.
+
+1. **Vision-parse cascade.** Bad FEN from `parseScreenshot` silently corrupts all downstream analysis and coaching. The model confidently coaches a position that doesn't exist.
+   *Prevention:* `parseScreenshot` returns a confidence score and per-square confidences. System prompt rule: "If confidence < 0.9 on key squares, call `editPosition` to confirm." Chessops validates legality; illegal positions retry once with error feedback, then escalate to `editPosition`.
+   *Detection:* `vision.invalid_fen` event.
+
+2. **Premature termination / over-eagerness.** Model answers "looks fine, play Nf3" without calling `analyzePosition`. Mobile chat encourages short replies — this temptation is real.
+   *Prevention:* hard rule in system prompt: "NEVER assess a move's quality, claim a position is winning, or suggest a specific move without calling `analyzePosition` first." `prepareStep` could detect a final response mentioning a specific move SAN with no `analyzePosition` result in the turn and force a retry, but probably overkill — the rule + eval loop should catch it.
+   *Detection:* `coaching.engine_disagreement` event (move claimed good ≠ Stockfish's best).
+
+3. **Infinite re-parse loops.** Model calls `parseScreenshot` → low confidence → calls `editPosition` → user corrects → re-parses → still ambiguous → tries again.
+   *Prevention:* per-turn tool budget: max 2 `parseScreenshot` calls in one turn. After 2 failures, system prompt falls back to "ask the user to type the FEN directly." Step budget `stepCountIs(8)` is the hard backstop.
+   *Detection:* `tool.dead_loop` event (any tool called >2× with identical args in one turn).
+
+4. **Wrong-tool selection between `showBoard` and `showOptions`.** Similar surfaces; both "display something." Model uses `showBoard` when it should be offering choices, or vice versa.
+   *Prevention:* sharply distinct names + descriptions with explicit "Use ONLY when..." clauses. `showBoard`: "Use when the user benefits from seeing a position visually." `showOptions`: "Use ONLY when offering 2-5 discrete next actions for the user to choose between." Plus enum-typed tool parameters where applicable.
+   *Detection:* eval-loop manual review (binary assertions can't easily catch this).
+
+5. **Sycophantic agreement on bad moves.** User says "I think Nxh7 is winning" → model agrees without engine check.
+   *Prevention:* same hard rule as failure mode #2 ("NEVER assess a move without `analyzePosition`"). Plus tone rule in Section 4 of the system prompt: "Disagreement is helpful; sycophancy is harmful. If `analyzePosition` shows the user's move is bad, say so directly and explain why."
+   *Detection:* `coaching.engine_disagreement` event, specifically when the disagreement *is with a user-proposed move* — a higher-severity variant worth alerting.
+
+## Appendix B — Principles checklist (for code review)
 
 When implementing, every PR should pass these:
 
