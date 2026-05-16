@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 
 export default tseslint.config(
   {
-    ignores: [".next/**", "node_modules/**", "public/**"],
+    ignores: [".next/**", "node_modules/**", "public/**", ".remember/**"],
   },
   ...nextVitals,
   ...nextTs,
