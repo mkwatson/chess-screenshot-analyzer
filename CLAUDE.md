@@ -8,8 +8,8 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 
 - **Plan 0 (rails) — SHIPPED.** Production live, CI gates merges, three-layer secret-leak protection active (gitleaks pre-commit + CI + GitHub native scanning).
 - **Plan 1 (static board + engine call) — SHIPPED.** Production has a starting-position board and an Analyze button that POSTs to `/api/analyze`. Server-side `@se-oss/stockfish@1.0.1` (Stockfish 17.1 WASM) runs as a module-scope warm singleton at depth 14 and returns the best move; the board paints it as a green arrow.
-- **Plan 2 (vision parse) — SHIPPED.** Production accepts a pasted chess screenshot; the server calls Gemini 3 Flash directly via `@ai-sdk/google` (AI Gateway deferred — see spec Section 3.4); chessops validates legality with one retry on illegal positions; parsed board renders; the Plan 1 Analyze button operates on whatever was parsed.
-- **Next plan:** Slice 3 — One-turn coach chat (real agent loop via AI SDK v6 `ToolLoopAgent`; replaces the two single-purpose endpoints with one streaming chat endpoint backed by the five tools).
+- **Plan 2 (vision parse) — SHIPPED.** Production accepts a pasted chess screenshot; the server calls Gemini 3.1 Flash Lite via `@ai-sdk/google` directly (AI Gateway deferred — see spec Section 3.4) with structured 8×8 grid `responseSchema`; chessops validates legality with one retry on illegal positions; parsed board renders; the Plan 1 Analyze button operates on whatever was parsed.
+- **Active: Plan 3 — One-turn coach chat.** Real agent loop via AI SDK v6 `ToolLoopAgent`; replaces the two single-purpose endpoints with one streaming chat endpoint backed by the five tools. assistant-ui as the chat surface. Open design question: image-paste UX in the composer (exploring options).
 - **Latest commit:** see `git log -1`.
 
 ### Known follow-ups (small, deferred)
