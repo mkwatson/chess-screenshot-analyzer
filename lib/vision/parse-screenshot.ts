@@ -3,15 +3,17 @@ import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import { Chess } from "chessops/chess";
 import { parseFen } from "chessops/fen";
-import { ParseInputSchema, type ParseOutput } from "./types";
+import { ParseInputSchema, type ParseInput, type ParseOutput } from "./types";
 
 // Model: gemini-3.1-flash-lite + structured 8x8-grid output is strictly
 // optimal for board parsing — see scripts/test-vision.py and AGENTS.md
 // "structured output > free-form when there's a schema-able answer".
 const MODEL = google("gemini-3.1-flash-lite");
 
-// Empty string for an empty square; otherwise one chess-piece letter.
-const PieceCell = z.enum(["", "p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]);
+// Use "." for an empty square (chess display convention). Gemini's response
+// schema REJECTS empty-string enum values — see AGENTS.md "responseSchema
+// enums".
+const PieceCell = z.enum([".", "p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]);
 const Row = z.array(PieceCell).length(8);
 const GridSchema = z.object({
   // board[0] = rank 8 (top of image), board[7] = rank 1.
@@ -24,53 +26,63 @@ const GridSchema = z.object({
 });
 
 const SYSTEM_INSTRUCTION = `You parse a chess board image and return the piece on every square. \
-Use empty string for empty squares. Use lowercase for black pieces (p n b r q k) \
+Use "." for empty squares. Use lowercase for black pieces (p n b r q k) \
 and uppercase for white (P N B R Q K). board[0] is rank 8 (top of image, black's back rank); \
 board[7] is rank 1 (bottom, white's back rank). Within each row, index 0 is file a, index 7 is file h.`;
 
-function gridToFen(g: z.infer<typeof GridSchema>): string {
-  const ranks = g.board.map((row) => {
-    let s = "";
-    let empty = 0;
-    for (const cell of row) {
-      if (cell === "") {
-        empty += 1;
-      } else {
-        if (empty > 0) {
-          s += String(empty);
-          empty = 0;
-        }
-        s += cell;
-      }
-    }
-    if (empty > 0) s += String(empty);
-    return s;
-  });
-  // Default the meta fields when the model returns blanks. KQkq is correct for
-  // any position where neither king nor rook has been confirmed as moved — the
-  // chess engine will still find the right best-move from the piece placement;
-  // it just may overstate castling rights. Refine via editPosition (Plan 6).
-  const castling = /^[KQkq]+$/.test(g.castling) ? g.castling : "KQkq";
-  const enPassant = /^[a-h][36]$/.test(g.enPassant) ? g.enPassant : "-";
-  return `${ranks.join("/")} ${g.sideToMove} ${castling} ${enPassant} 0 1`;
+// FEN row encoding is a run-length fold: ["r","",".","b"] → "r2b".
+// Carries { encoded, runOfEmpties } through the row; flushes the run on each
+// non-empty cell and at the end.
+interface FenAcc {
+  readonly encoded: string;
+  readonly run: number;
 }
+const flushRun = ({ encoded, run }: FenAcc): string => (run > 0 ? `${encoded}${run}` : encoded);
+const rowToFen = (row: readonly z.infer<typeof PieceCell>[]): string =>
+  flushRun(
+    row.reduce<FenAcc>(
+      (acc, cell) =>
+        cell === "."
+          ? { encoded: acc.encoded, run: acc.run + 1 }
+          : { encoded: `${flushRun(acc)}${cell}`, run: 0 },
+      { encoded: "", run: 0 },
+    ),
+  );
 
-function isLegalFen(fen: string): { ok: true } | { ok: false; reason: string } {
+// Default meta fields when the model returns blanks. The chess engine doesn't
+// depend on these for finding the best move from a piece placement; refine via
+// editPosition (Plan 6).
+const defaultCastling = (s: string): string => (/^[KQkq]+$/.test(s) ? s : "KQkq");
+const defaultEnPassant = (s: string): string => (/^[a-h][36]$/.test(s) ? s : "-");
+
+const gridToFen = (g: z.infer<typeof GridSchema>): string =>
+  [
+    g.board.map(rowToFen).join("/"),
+    g.sideToMove,
+    defaultCastling(g.castling),
+    defaultEnPassant(g.enPassant),
+    "0",
+    "1",
+  ].join(" ");
+
+type Legality = { ok: true } | { ok: false; reason: string };
+const isLegalFen = (fen: string): Legality => {
   const parsed = parseFen(fen);
   if (parsed.isErr) return { ok: false, reason: parsed.error.message };
   const pos = Chess.fromSetup(parsed.value);
   if (pos.isErr) return { ok: false, reason: pos.error.message };
   return { ok: true };
-}
+};
 
-async function callGemini(args: {
-  imageBase64: string;
-  mimeType: string;
-  retryFeedback?: string;
-}): Promise<{ fen: string; sideToMove: "w" | "b" }> {
-  const prompt = args.retryFeedback
-    ? `The previous parse produced an illegal position: ${args.retryFeedback}. Re-examine each square carefully.`
-    : "Identify the piece on every square.";
+const callGemini = async (args: {
+  readonly imageBase64: string;
+  readonly mimeType: "image/png" | "image/jpeg" | "image/webp";
+  readonly retryFeedback?: string;
+}): Promise<{ fen: string; sideToMove: "w" | "b" }> => {
+  const prompt =
+    args.retryFeedback !== undefined
+      ? `The previous parse produced an illegal position: ${args.retryFeedback}. Re-examine each square carefully.`
+      : "Identify the piece on every square.";
 
   const result = await generateObject({
     model: MODEL,
@@ -98,20 +110,24 @@ async function callGemini(args: {
   });
 
   return { fen: gridToFen(result.object), sideToMove: result.object.sideToMove };
-}
+};
 
-export async function parseScreenshot(rawInput: unknown): Promise<ParseOutput> {
-  const parsed = ParseInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return { ok: false, reason: "invalid_input", detail: parsed.error.message };
-  }
+// One attempt: call Gemini, check legality. Returns a discriminated result;
+// the catch-and-wrap turns any thrown error into ok:false vision_error so the
+// caller can stay linear (no try/catch reassignment dance).
+type Attempt =
+  | { ok: true; fen: string; sideToMove: "w" | "b" }
+  | { ok: false; reason: "vision_error" | "illegal_position"; detail: string };
 
-  let attempt: Awaited<ReturnType<typeof callGemini>>;
+const tryParse = async (input: ParseInput, retryFeedback?: string): Promise<Attempt> => {
   try {
-    attempt = await callGemini({
-      imageBase64: parsed.data.imageBase64,
-      mimeType: parsed.data.mimeType,
-    });
+    // `exactOptionalPropertyTypes`: spread retryFeedback only when defined,
+    // so the key isn't present with an undefined value.
+    const out = await callGemini(retryFeedback !== undefined ? { ...input, retryFeedback } : input);
+    const legality = isLegalFen(out.fen);
+    return legality.ok
+      ? { ok: true, ...out }
+      : { ok: false, reason: "illegal_position", detail: legality.reason };
   } catch (e) {
     return {
       ok: false,
@@ -119,36 +135,24 @@ export async function parseScreenshot(rawInput: unknown): Promise<ParseOutput> {
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+};
 
-  let legality = isLegalFen(attempt.fen);
-  if (!legality.ok) {
-    try {
-      const retried = await callGemini({
-        imageBase64: parsed.data.imageBase64,
-        mimeType: parsed.data.mimeType,
-        retryFeedback: legality.reason,
-      });
-      const retryLegality = isLegalFen(retried.fen);
-      if (!retryLegality.ok) {
-        return {
-          ok: false,
-          reason: "illegal_position",
-          detail: retryLegality.reason,
-        };
-      }
-      attempt = retried;
-      legality = retryLegality;
-    } catch (e) {
-      return {
-        ok: false,
-        reason: "vision_error",
-        detail: e instanceof Error ? e.message : String(e),
-      };
-    }
+const toSuccess = (a: Extract<Attempt, { ok: true }>): ParseOutput => ({
+  ok: true,
+  data: { fen: a.fen, sideToMove: a.sideToMove },
+});
+
+export const parseScreenshot = async (rawInput: unknown): Promise<ParseOutput> => {
+  const parsed = ParseInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { ok: false, reason: "invalid_input", detail: parsed.error.message };
   }
 
-  return {
-    ok: true,
-    data: { fen: attempt.fen, sideToMove: attempt.sideToMove },
-  };
-}
+  const first = await tryParse(parsed.data);
+  if (first.ok) return toSuccess(first);
+  // Only retry illegal_position; vision_error is final.
+  if (first.reason !== "illegal_position") return first;
+
+  const retry = await tryParse(parsed.data, first.detail);
+  return retry.ok ? toSuccess(retry) : retry;
+};

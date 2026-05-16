@@ -9,6 +9,7 @@ Reads:  test_board.jpg  +  GOOGLE_GENERATIVE_AI_API_KEY from .env.local
 """
 
 import base64
+import itertools
 import json
 import os
 import re
@@ -44,6 +45,11 @@ SYSTEM = (
 # 1. "fen" — model returns the FEN string directly
 # 2. "grid" — model returns an 8x8 array; we construct the FEN server-side
 
+# Must match the production schema in lib/vision/parse-screenshot.ts EXACTLY.
+# Specifically: the cell enum must NOT include "" — Gemini's response_schema
+# rejects empty-string enum values (see AGENTS.md "responseSchema enums").
+# Empty squares use "." as the sentinel.
+PIECE_CELL_ENUM = [".", "p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]
 GRID_SCHEMA = {
     "type": "object",
     "properties": {
@@ -55,7 +61,7 @@ GRID_SCHEMA = {
                 "type": "array",
                 "minItems": 8,
                 "maxItems": 8,
-                "items": {"type": "string"},  # "" or one of pnbrqkPNBRQK
+                "items": {"type": "string", "enum": PIECE_CELL_ENUM},
             },
         },
         "sideToMove": {"type": "string", "enum": ["w", "b"]},
@@ -67,29 +73,25 @@ GRID_SCHEMA = {
 }
 
 
+def _row_to_fen(row: list[str]) -> str:
+    """Run-length encode one rank. ['r','.','.','b'] → 'r2b'."""
+    return "".join(
+        str(sum(1 for _ in group)) if cell == "." else "".join(group)
+        for cell, group in itertools.groupby(row)
+    )
+
+
 def grid_to_fen(obj) -> str:
     """Convert {board: 8x8, sideToMove, castling, enPassant} → FEN.
     Board is rank 8 first (top of array), rank 1 last."""
-    ranks = []
-    for row in obj["board"]:
-        s = ""
-        empty = 0
-        for cell in row:
-            if not cell or cell == " " or cell == ".":
-                empty += 1
-            else:
-                if empty:
-                    s += str(empty)
-                    empty = 0
-                s += cell
-        if empty:
-            s += str(empty)
-        ranks.append(s)
-    fen = "/".join(ranks)
-    return (
-        f"{fen} {obj['sideToMove']} {obj['castling'] or '-'} "
-        f"{obj.get('enPassant') or '-'} 0 1"
-    )
+    return " ".join([
+        "/".join(_row_to_fen(row) for row in obj["board"]),
+        obj["sideToMove"],
+        obj["castling"] or "-",
+        obj.get("enPassant") or "-",
+        "0",
+        "1",
+    ])
 
 
 def call_gemini(model: str, thinking_level: str, shape: str) -> tuple[str, int, str]:
@@ -102,7 +104,7 @@ def call_gemini(model: str, thinking_level: str, shape: str) -> tuple[str, int, 
         else (
             "Identify the piece on every square. Return a JSON object matching "
             "the response schema: 8x8 'board' (rank 8 first, file a first); "
-            "empty squares as empty string."
+            'use "." for empty squares.'
         )
     )
 
@@ -165,24 +167,23 @@ def call_gemini(model: str, thinking_level: str, shape: str) -> tuple[str, int, 
             return (f"GRID_PARSE_FAIL: {e}", ms, text[:200])
 
 
+def _expand_board(b: str) -> list[str]:
+    """FEN board → 64-cell list, empties as ''. 'r2b...' → ['r','','','b',...]."""
+    return [
+        cell
+        for ch in b.replace("/", "")
+        for cell in (["" for _ in range(int(ch))] if ch.isdigit() else [ch])
+    ]
+
+
 def board_diff(pred: str, truth: str) -> str:
-    """Compare two board portions (the first FEN field). Returns short report."""
+    """Compare two FEN board fields. Returns short report."""
     if pred == truth:
         return "exact"
-    # Expand each into 64 cells for per-square compare
-    def expand(b: str) -> list[str]:
-        cells = []
-        for ch in b.replace("/", ""):
-            if ch.isdigit():
-                cells.extend([""] * int(ch))
-            else:
-                cells.append(ch)
-        return cells
-    pe, te = expand(pred), expand(truth)
+    pe, te = _expand_board(pred), _expand_board(truth)
     if len(pe) != 64 or len(te) != 64:
         return f"length-mismatch (pred={len(pe)}, truth={len(te)})"
-    wrong = sum(1 for a, b in zip(pe, te) if a != b)
-    return f"{wrong}/64 squares wrong"
+    return f"{sum(1 for a, b in zip(pe, te) if a != b)}/64 squares wrong"
 
 
 def status(pred_fen: str) -> str:

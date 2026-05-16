@@ -687,6 +687,9 @@ When implementing, every PR should pass these:
 - [ ] If we're adding a vendor, what does it give us for free that we're not yet using?
 - [ ] If we're adding a test, does any other mechanism in the shift-left hierarchy (type / Zod / lint / build / preview deploy) already prove the same guarantee? If yes, prefer that over the test.
 - [ ] If we just learned a new rule, did we encode it in an artifact (AGENTS.md, lint rule, hook, reviewer checklist) so it self-applies next time?
+- [ ] If there's a `let` or mutation in the diff, is it contained to a small scope with a clear reason? Could `map`/`filter`/`reduce` express the same logic without it?
+- [ ] If a new boundary value enters the codebase (request body, external API response, etc.), is it parsed once into a typed value at the boundary, with downstream code carrying the type (no re-validation)?
+- [ ] If a function in `lib/` is doing I/O, is the I/O the function's job (it's at the shell), or should the effect be pushed outward to leave a pure core?
 
 ## Appendix C — Code-quality and type-driven development
 
@@ -812,3 +815,39 @@ Pre-commit and CI together: nothing reaches `main` without strict types, zero li
 - "Helper" wrappers around standard library functions that don't add behavior.
 - Premature performance optimization. Optimize *after* measurement, never before.
 - Mocking what we own. If a module is hard to use real in tests, fix the module, not the test.
+
+### C.7 Functional, pure, immutable
+
+Functional programming is the operation-level expression of the five qualities (C.1). Each of *minimal*, *clear*, *maintainable*, *extensible*, *testable* lands naturally on the FP side:
+
+- **Arrow functions over function declarations** by default — flatter syntax, no `this` foot-guns.
+- **`map` / `filter` / `reduce` over `for` loops with `let`** — make data flow visible.
+- **Mutation is a smell** unless contained to a small scope with a clear reason (e.g., performance-critical hot path with a measured profile).
+- **Immutable data by default.** `readonly` for object/array fields where TypeScript supports it. `as const` for literals.
+- **Compose small pure functions** rather than passing flags to large parameterized functions. The `tryParse` + `parseScreenshot` shape in `lib/vision/parse-screenshot.ts` is the canonical example: two small pure pieces, composed at the call site.
+- **Discriminated unions for fallible results** (`{ ok: true; data } | { ok: false; reason }`) — already established in C.1 / C.3, called out here because it IS the FP algebraic-data-type idiom.
+- **Total functions**: a function should be defined for every input of its declared type. If a value can be invalid, that goes in the input *type* (`NonEmpty<T>`) or the output type (`Result<T, E>`) — never as an implicit assumption.
+
+Pure code is what the type system can actually verify. Mutation defeats type-driven development's strongest guarantees.
+
+### C.8 Parse, don't validate
+
+At every untyped boundary, **parse** the input into a typed value via Zod (or similar) ONCE — don't pass "potentially valid" data downstream and re-check it scattered throughout the code.
+
+- Boundaries that need parsing: API request bodies, Dexie rows read from disk, external API responses (Gemini, Stockfish output, future PostHog responses), env vars, URL params, image/Blob inputs, anything from `localStorage` / `sessionStorage`.
+- Downstream code carries the parsed type. It does **not** re-check legality, shape, or constraints — the type system enforces those.
+- Example: `FenSchema` from `lib/engine/types.ts` is a Zod `.refine` over chessops. Once a value is `Fen`, every downstream function trusts it. There is no second FEN validator anywhere.
+- Generalization of the "chessops as only FEN validator" rule in this section: **for every boundary value class, there is exactly one validator, applied at the boundary.**
+
+Read: [Alexis King — *Parse, don't validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/) for the canonical formulation.
+
+### C.9 Functional core, imperative shell
+
+The codebase divides into two regions:
+
+- **Imperative shell (edges)**: I/O code. Next.js route handlers, the `useChat` integration in React components, Dexie reads/writes, `@ai-sdk/google` calls, the Stockfish child-process boundary, PostHog event emission. These talk to the outside world.
+- **Functional core (middle)**: Pure domain logic. FEN construction (`gridToFen`), chess rules (chessops wrappers), prompt building, message-parts shaping, schema definitions, eval-loop reasoning, move-quality grading. Same inputs → same outputs, always.
+
+If a function in the "middle" is doing I/O, that's a refactor smell — push the effect outward. The agent's tool definitions are a good test: `parseScreenshot` and `analyzePosition` are *tools* (effectful), but the data they return is pure; the agent loop above them is pure orchestration.
+
+Read: [Gary Bernhardt — *Boundaries*](https://www.destroyallsoftware.com/talks/boundaries) for the canonical formulation.

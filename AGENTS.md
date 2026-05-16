@@ -72,6 +72,9 @@ Plans are written one at a time, in order.
 11. **Tests are not exempt from minimum-complexity discipline.** Don't write tests for the sake of coverage. Few, complementary, valuable. If a type, lint rule, DB constraint, or preview deploy already proves something, a test that re-asserts the same guarantee is duplication — extra source to maintain, drifts from reality, adds CI latency.
 12. **Compound engineering.** When the user teaches a rule, build the prevention into artifacts (AGENTS.md, lint, hooks, reviewer prompts) so it applies automatically going forward — don't rely on memory.
 13. **Keep going.** Don't stall on ceremony. Make forward progress.
+14. **Prefer functional, pure, immutable.** Arrow functions + `map`/`filter`/`reduce` > `for` loops with `let`. Mutation is a smell unless contained in a small scope with a clear reason. Pure functions describe their entire behavior in the signature — easier to reason about, easier to compose, easier for the type system to verify.
+15. **Parse, don't validate.** At every untyped boundary (API request, Dexie row, external response, env var), parse the input into a typed value via Zod (or similar) ONCE. Downstream code carries the type, not "a string we hope is valid." No scattered re-validation. The chessops-as-only-FEN-validator rule below is one application of this principle.
+16. **Functional core, imperative shell.** I/O lives at the edges — route handlers, Dexie calls, `@ai-sdk/google` calls, Stockfish process. The middle (domain logic: FEN construction, chess rules, prompt building, output shaping) is pure. If a pure-looking function is doing I/O, refactor — push the effect outward.
 
 ## Stack (locked in)
 
@@ -100,6 +103,16 @@ Both are 3.x family — both use `thinkingLevel: 'minimal' \| 'low' \| 'medium' 
 - `gemini-3-pro-preview` / `gemini-3-flash-preview` — superseded by 3.1.
 
 **Before adding any third Gemini model, justify why the two above can't cover the use case.**
+
+### Gemini `responseSchema` enums must NOT contain empty strings
+
+Gemini's `response_schema` validator rejects enum arrays that include `""`. Error: `enum[0]: cannot be empty`. This bit us in Plan 2 — we used `""` as the "empty square" sentinel in the 8×8 grid and only discovered it when a real image was sent to production (the path between Zod → AI SDK → Google's schema validator). Mocked tests didn't catch it; the test script's schema diverged from prod and didn't either.
+
+**Rule:** use a non-empty sentinel (e.g. `"."` for chess empty squares; `"none"`/`"null"` for other nullable enums). Convert back to the desired runtime value (empty/null) server-side.
+
+**Prevent recurrence:**
+- `scripts/test-vision.py` now mirrors the production Zod enum exactly (same allowed values) so a future schema drift would surface in the test script.
+- If we add other Gemini structured-output endpoints, keep the script-schema and prod-schema in lock-step — a separate test script per endpoint is fine.
 
 ### Prefer structured output over free-form when there's a schema-able answer
 
