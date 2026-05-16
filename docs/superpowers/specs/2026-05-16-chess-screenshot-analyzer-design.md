@@ -175,13 +175,15 @@ All five tools are defined server-side via the AI SDK v6 `tool()` factory. Three
 
 Calls go direct via `@ai-sdk/google` (AI Gateway deferred — see Section 3.4). **Posture: default Flash, escalate to Pro on Stockfish-output heuristics.** Not the other way around.
 
-| Role | Model | `thinkingLevel` | When |
+| Role | Model | thinking knob | When |
 |---|---|---|---|
-| Tool routing / interstitial steps | `gemini-3-flash` | `low` (or off) | Default for most steps in the loop. Thinking adds latency without quality lift on one-shot tool selection. |
-| Vision parse | `gemini-3-flash` | `minimal` | Inside `parseScreenshot.execute` (separate model call from the agent loop). Verify with chessops legality check instead of letting the model reason longer. |
-| Final coaching response (default) | `gemini-3-flash` | `low` | Default. Flash matches 2.5 Pro on most benchmarks and is plenty for synthesizing pre-computed Stockfish analysis into prose. |
-| Final coaching response (sharp position) | `gemini-3.1-pro` | `medium` | Triggered via `prepareStep` heuristics on Stockfish output (see below). Multi-candidate explanation needs comparison reasoning. |
-| Async "deeper look" affordance | `gemini-3-deep-think` | (always-on extended) | NEVER in the user-facing critical path. Surfaced only as an optional CTA after a Pro answer ("want a deeper analysis?"). |
+| Tool routing / interstitial steps | `gemini-2.5-flash` (today) → `gemini-3-flash-preview` once stable | `thinkingBudget: 0` (2.5) / `thinkingLevel: 'low'` (3) | Default for most steps in the loop. Thinking adds latency without quality lift on one-shot tool selection. |
+| Vision parse | `gemini-2.5-flash` (today) → `gemini-3-flash-preview` once stable | `thinkingBudget: 0` (2.5) / `thinkingLevel: 'minimal'` (3) | Inside `parseScreenshot.execute`. Verify with chessops legality check instead of letting the model reason longer. |
+| Final coaching response (default) | `gemini-2.5-flash` (today) → `gemini-3-flash-preview` once stable | `thinkingBudget: 0–8192` (2.5) / `thinkingLevel: 'low'` (3) | Default. Sufficient for synthesizing pre-computed Stockfish analysis into prose. |
+| Final coaching response (sharp position) | `gemini-2.5-pro` (today) → `gemini-3.1-pro-preview` once we accept preview risk | `thinkingBudget: ~4096` (2.5) / `thinkingLevel: 'medium'` (3) | Triggered via `prepareStep` heuristics on Stockfish output (see below). Multi-candidate explanation needs comparison reasoning. |
+| Async "deeper look" affordance | `gemini-3.1-pro-preview` with extended thinking (when GA versions exist for `deep-think`, swap in) | high thinking budget / `thinkingLevel: 'high'` | NEVER in the user-facing critical path. Surfaced only as an optional CTA after a Pro answer ("want a deeper analysis?"). |
+
+**Why 2.5 now:** `gemini-3-flash` model ID doesn't exist; the actual 3-family Flash is `gemini-3-flash-preview` (still preview-tagged). Vercel AI SDK's own docs use `gemini-2.5-flash` as the GA Flash example. See `AGENTS.md` "Gemini model IDs — known landmines" for the full table and the provider-option gotchas.
 
 **Escalation heuristics inside `prepareStep`.** Implemented as deterministic rules on tool results — not model self-judgment, not a router LLM (both add cost or latency without measurable benefit; Stockfish's output is a quantitative difficulty oracle the LLM can only guess at).
 

@@ -23,11 +23,14 @@ detect a chess board in the image, respond with confidence: 0 and best-guess \
 empty board. Confidence is your subjective certainty in the parse (0-1).`;
 
 // Direct Google AI Studio provider (bypassing the Vercel AI Gateway).
-// Reason: as of 2026-05-16 the Gateway is throttling free credits due to abuse
-// and paid credits require pre-purchase. Direct Google's own free tier suffices
-// for v0. We can flip back to the Gateway ("google/gemini-3-flash") string when
-// observability becomes load-bearing — see CLAUDE.md follow-ups.
-const MODEL = google("gemini-3-flash");
+// Reason: as of 2026-05-16 the Gateway is throttling free credits due to abuse.
+// Model choice: `gemini-2.5-flash` is the current GA Flash that Vercel's own
+// docs use; `gemini-3-flash-preview` exists but is preview-tagged. The spec
+// originally said "gemini-3-flash" but that model ID was never released —
+// 3 Pro is `gemini-3-pro-preview`, 3 Flash is `gemini-3-flash-preview`. Stick
+// to 2.5-flash until 3-flash is GA. Vision capability + responseSchema +
+// thinking knobs all supported on 2.5-flash.
+const MODEL = google("gemini-2.5-flash");
 
 function isLegalFen(fen: string): { ok: true } | { ok: false; reason: string } {
   const parsed = parseFen(fen);
@@ -69,8 +72,10 @@ async function callGemini(args: {
     ],
     providerOptions: {
       google: {
-        mediaResolution: "MEDIA_RESOLUTION_HIGH",
-        thinkingConfig: { thinkingLevel: "minimal" },
+        // gemini-2.5-flash: thinkingBudget is a token cap (0 disables thinking
+        // entirely). Vision parse doesn't need reasoning. When we move to
+        // gemini-3-*-preview, switch to thinkingLevel: 'minimal' instead.
+        thinkingConfig: { thinkingBudget: 0 },
       },
     },
   });

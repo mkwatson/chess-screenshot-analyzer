@@ -75,7 +75,27 @@ Plans are written one at a time, in order.
 
 ## Stack (locked in)
 
-Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini 3 via `@ai-sdk/google` (direct; AI Gateway deferred — see spec Section 3 / CLAUDE.md follow-ups) · AI SDK v6 `ToolLoopAgent` + assistant-ui · Stockfish 17.1 WASM (server-side, warm singleton) · chessground + chessops · Dexie v4 · vaul + sonner · `@serwist/next` · PostHog (LLM Analytics + Replay + Errors) · Upstash Redis for resumable streams only.
+Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini via `@ai-sdk/google` (direct; AI Gateway deferred — see spec Section 3) · AI SDK v6 `ToolLoopAgent` + assistant-ui · Stockfish 17.1 WASM (server-side, warm singleton) · chessground + chessops · Dexie v4 · vaul + sonner · `@serwist/next` · PostHog (LLM Analytics + Replay + Errors) · Upstash Redis for resumable streams only.
+
+### Gemini model IDs — known landmines
+
+The spec was written assuming `gemini-3-flash` exists. **It does not.** As of May 2026, the actual model IDs returned by `https://generativelanguage.googleapis.com/v1beta/models` are:
+
+- **GA Flash:** `gemini-2.5-flash` (use this until 3-flash is GA — what Vercel's own docs use)
+- **Preview Flash:** `gemini-3-flash-preview` (preview-tagged; avoid in prod for v0)
+- **Preview Pro:** `gemini-3-pro-preview` (preview)
+- **Preview Pro 3.1:** `gemini-3.1-pro-preview`
+- **GA Lite:** `gemini-3.1-flash-lite`
+- **Moving aliases:** `gemini-flash-latest`, `gemini-pro-latest` (auto-upgrade; surprise potential — avoid for production)
+
+**Provider option gotcha:** Gemini 2.5 and Gemini 3 use *different* thinking knobs:
+
+- **2.5 family:** `providerOptions.google.thinkingConfig.thinkingBudget: <number>` (token cap; `0` disables thinking entirely)
+- **3 family:** `providerOptions.google.thinkingConfig.thinkingLevel: 'minimal' | 'low' | 'medium' | 'high'`
+
+The 3-only knob `mediaResolution: 'MEDIA_RESOLUTION_HIGH'` is **not** supported on 2.5 and will be ignored / error. Don't include it on 2.5 calls.
+
+**Rule:** before adding a new Gemini-family model, list available models with the API key (`curl …/v1beta/models -H "X-goog-api-key:…"`) to confirm the ID exists at the version we're hitting, and check the AI SDK provider docs for which `providerOptions.google.*` knobs apply to that family.
 
 ## Vendor account scoping
 
