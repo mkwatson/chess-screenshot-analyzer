@@ -8,9 +8,10 @@ const nextConfig: NextConfig = {
 
   // Vercel's output file tracer doesn't follow runtime spawn() targets. We
   // must explicitly include the package's dist/ (child script + WASM) in the
-  // function deployment for /api/analyze.
+  // function deployment for /api/chat (the agent loop's analyzePosition tool
+  // spawns Stockfish server-side).
   outputFileTracingIncludes: {
-    "/api/analyze": ["./node_modules/@se-oss/stockfish/dist/**/*"],
+    "/api/chat": ["./node_modules/@se-oss/stockfish/dist/**/*"],
   },
 };
 
