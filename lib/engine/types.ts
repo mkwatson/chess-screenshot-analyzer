@@ -1,10 +1,23 @@
 import { z } from "zod";
+import { Chess } from "chessops/chess";
+import { parseFen } from "chessops/fen";
 
-// FEN regex: piece placement / side / castling / en passant / halfmove / fullmove
-// (lenient — we rely on chessops in Stockfish wrapper for strict legality)
-const FEN_REGEX = /^[1-8pnbrqkPNBRQK/]+ [wb] (-|[KQkqA-Ha-h]+) (-|[a-h][36]) \d+ \d+$/;
-
-export const FenSchema = z.string().min(1).regex(FEN_REGEX, { message: "Invalid FEN" });
+// FEN validity = whatever chessops accepts (parseFen + Chess.fromSetup).
+// Chessops is our single source of truth for chess validity across the app
+// (also used in lib/vision/parse-screenshot.ts). Do not add a parallel regex
+// here — it would drift from chessops and we've already been bitten by that.
+// See AGENTS.md "chessops is the only FEN validator".
+export const FenSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (fen) => {
+      const parsed = parseFen(fen);
+      if (parsed.isErr) return false;
+      return Chess.fromSetup(parsed.value).isOk;
+    },
+    { message: "Invalid FEN (chessops rejected)" },
+  );
 export type Fen = z.infer<typeof FenSchema>;
 
 export const AnalyzeInputSchema = z.object({

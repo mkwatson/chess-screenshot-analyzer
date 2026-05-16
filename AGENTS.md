@@ -77,25 +77,47 @@ Plans are written one at a time, in order.
 
 Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini via `@ai-sdk/google` (direct; AI Gateway deferred — see spec Section 3) · AI SDK v6 `ToolLoopAgent` + assistant-ui · Stockfish 17.1 WASM (server-side, warm singleton) · chessground + chessops · Dexie v4 · vaul + sonner · `@serwist/next` · PostHog (LLM Analytics + Replay + Errors) · Upstash Redis for resumable streams only.
 
-### Gemini model IDs — known landmines
+### Gemini model policy
 
-The spec was written assuming `gemini-3-flash` exists. **It does not.** As of May 2026, the actual model IDs returned by `https://generativelanguage.googleapis.com/v1beta/models` are:
+**Use exactly two Gemini models, ever:**
 
-- **GA Flash:** `gemini-2.5-flash` (use this until 3-flash is GA — what Vercel's own docs use)
-- **Preview Flash:** `gemini-3-flash-preview` (preview-tagged; avoid in prod for v0)
-- **Preview Pro:** `gemini-3-pro-preview` (preview)
-- **Preview Pro 3.1:** `gemini-3.1-pro-preview`
-- **GA Lite:** `gemini-3.1-flash-lite`
-- **Moving aliases:** `gemini-flash-latest`, `gemini-pro-latest` (auto-upgrade; surprise potential — avoid for production)
+| Use case | Model | Provider options |
+|---|---|---|
+| Speed-critical or schema-bounded (vision parse, tool routing, chat synthesis) | `gemini-3.1-flash-lite` | `thinkingLevel: 'low'` (or `'minimal'`) |
+| Reasoning-heavy (deep coaching, complex tool orchestration, hard analysis) | `gemini-3.1-pro-preview` | `thinkingLevel: 'low' \| 'medium' \| 'high'` per turn complexity |
 
-**Provider option gotcha:** Gemini 2.5 and Gemini 3 use *different* thinking knobs:
+Both are 3.x family — both use `thinkingLevel: 'minimal' \| 'low' \| 'medium' \| 'high'` (NOT `thinkingBudget`).
 
-- **2.5 family:** `providerOptions.google.thinkingConfig.thinkingBudget: <number>` (token cap; `0` disables thinking entirely)
-- **3 family:** `providerOptions.google.thinkingConfig.thinkingLevel: 'minimal' | 'low' | 'medium' | 'high'`
+**Why Flash Lite is the default for vision** (counter-intuitive — was Pro Preview before testing):
+- `scripts/test-vision.py` measured 3/3 board-exact at 2.2s avg on the test image with structured-grid output.
+- Pro Preview gave the same board-exact result at 3.4–17.3s (1.5–8× slower) with zero accuracy gain.
+- **The structured-output schema is the lever, not the model size** — see rule below.
 
-The 3-only knob `mediaResolution: 'MEDIA_RESOLUTION_HIGH'` is **not** supported on 2.5 and will be ignored / error. Don't include it on 2.5 calls.
+**Why not other models:**
+- `gemini-3-flash`, `gemini-3.1-flash` — **do not exist.** Don't reach for them.
+- `gemini-2.5-*` — older generation.
+- `gemini-flash-latest` / `gemini-pro-latest` — moving aliases; auto-upgrade surprises are not worth the convenience. Pin the exact string.
+- `gemini-3-pro-preview` / `gemini-3-flash-preview` — superseded by 3.1.
 
-**Rule:** before adding a new Gemini-family model, list available models with the API key (`curl …/v1beta/models -H "X-goog-api-key:…"`) to confirm the ID exists at the version we're hitting, and check the AI SDK provider docs for which `providerOptions.google.*` knobs apply to that family.
+**Before adding any third Gemini model, justify why the two above can't cover the use case.**
+
+### Prefer structured output over free-form when there's a schema-able answer
+
+If the model's output is constrained (an enum, a record shape, an N×M grid, a list of items with known fields), pass a `responseSchema` (Zod) to `generateObject` / `generateText` instead of asking for free-form text and parsing it.
+
+**Why** — proven empirically on chess board parsing (`scripts/test-vision.py`):
+- Free-form FEN string from Flash Lite: 0/3 board-exact (model mis-encodes RLE / piece positions even when it "sees" the board right).
+- Structured 8×8 grid + server-constructed FEN: 3/3 board-exact (model only has to identify pieces; server handles syntax).
+
+This generalizes: encoding rules (FEN syntax, JSON quoting, escaping) are where small models stumble. Move them server-side. Keep the model's job to "what is the answer," not "how do I format it."
+
+### chessops is the only FEN validator
+
+We use `chessops` (`parseFen` + `Chess.fromSetup` from `chessops/chess` and `chessops/fen`) as the **single source of truth** for "is this FEN legal?" across the entire codebase:
+- `lib/engine/types.ts` `FenSchema` — Zod `.refine()` delegates to chessops
+- `lib/vision/parse-screenshot.ts` `isLegalFen` — direct chessops call
+
+Do **not** introduce a parallel regex, hand-rolled validator, or "lenient" pre-check. Two validators that disagree about legality is exactly the drift surface we got bitten by in Plan 2 (a Gemini-output FEN passed chessops in parseScreenshot but failed our regex in `/api/analyze`).
 
 ## Vendor account scoping
 

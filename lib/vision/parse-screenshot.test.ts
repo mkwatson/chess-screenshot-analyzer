@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock ai's generateObject before importing the SUT.
+// Mock `ai`'s generateObject before importing the SUT.
 const generateObjectMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -12,42 +12,79 @@ vi.mock("ai", async (importOriginal) => {
 
 import { parseScreenshot } from "./parse-screenshot";
 
-const STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+type Cell = "" | "p" | "n" | "b" | "r" | "q" | "k" | "P" | "N" | "B" | "R" | "Q" | "K";
+type Grid = Cell[][];
 
-const ILLEGAL_FEN =
-  // Two white kings — clearly illegal
-  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBKK w KQkq - 0 1";
+// Starting position as a grid (rank 8 first → rank 1).
+const STARTING_GRID: Grid = [
+  ["r", "n", "b", "q", "k", "b", "n", "r"],
+  ["p", "p", "p", "p", "p", "p", "p", "p"],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["P", "P", "P", "P", "P", "P", "P", "P"],
+  ["R", "N", "B", "Q", "K", "B", "N", "R"],
+];
+
+// Two-white-kings (cell h1 is K instead of R) — chessops rejects as illegal.
+const ILLEGAL_GRID: Grid = [
+  ["r", "n", "b", "q", "k", "b", "n", "r"],
+  ["p", "p", "p", "p", "p", "p", "p", "p"],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
+  ["P", "P", "P", "P", "P", "P", "P", "P"],
+  ["R", "N", "B", "Q", "K", "B", "N", "K"],
+];
 
 const VALID_INPUT = {
   imageBase64: "iVBORw0KGgo=",
   mimeType: "image/png" as const,
 };
 
+const STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 beforeEach(() => {
   generateObjectMock.mockReset();
 });
 
 describe("parseScreenshot", () => {
-  it("returns ok:true on a legal-FEN parse", async () => {
+  it("returns ok:true with the constructed FEN when the grid is legal", async () => {
     generateObjectMock.mockResolvedValueOnce({
-      object: { fen: STARTING_FEN, sideToMove: "w", confidence: 0.95 },
+      object: {
+        board: STARTING_GRID,
+        sideToMove: "w",
+        castling: "KQkq",
+        enPassant: "-",
+      },
     });
     const result = await parseScreenshot(VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.fen).toBe(STARTING_FEN);
-      expect(result.data.confidence).toBe(0.95);
-    }
+    expect(result).toEqual({
+      ok: true,
+      data: { fen: STARTING_FEN, sideToMove: "w" },
+    });
     expect(generateObjectMock).toHaveBeenCalledTimes(1);
   });
 
   it("retries once on illegal position then succeeds", async () => {
     generateObjectMock
       .mockResolvedValueOnce({
-        object: { fen: ILLEGAL_FEN, sideToMove: "w", confidence: 0.9 },
+        object: {
+          board: ILLEGAL_GRID,
+          sideToMove: "w",
+          castling: "KQkq",
+          enPassant: "-",
+        },
       })
       .mockResolvedValueOnce({
-        object: { fen: STARTING_FEN, sideToMove: "w", confidence: 0.92 },
+        object: {
+          board: STARTING_GRID,
+          sideToMove: "w",
+          castling: "KQkq",
+          enPassant: "-",
+        },
       });
     const result = await parseScreenshot(VALID_INPUT);
     expect(result.ok).toBe(true);
@@ -57,10 +94,20 @@ describe("parseScreenshot", () => {
   it("returns ok:false illegal_position when retry also fails", async () => {
     generateObjectMock
       .mockResolvedValueOnce({
-        object: { fen: ILLEGAL_FEN, sideToMove: "w", confidence: 0.9 },
+        object: {
+          board: ILLEGAL_GRID,
+          sideToMove: "w",
+          castling: "KQkq",
+          enPassant: "-",
+        },
       })
       .mockResolvedValueOnce({
-        object: { fen: ILLEGAL_FEN, sideToMove: "w", confidence: 0.5 },
+        object: {
+          board: ILLEGAL_GRID,
+          sideToMove: "w",
+          castling: "KQkq",
+          enPassant: "-",
+        },
       });
     const result = await parseScreenshot(VALID_INPUT);
     expect(result.ok).toBe(false);

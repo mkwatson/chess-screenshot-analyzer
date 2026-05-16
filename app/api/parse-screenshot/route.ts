@@ -10,9 +10,7 @@ function statusFor(result: ParseOutput): number {
   switch (result.reason) {
     case "invalid_input":
       return 400;
-    case "no_chess_board_detected":
     case "illegal_position":
-    case "low_confidence":
       return 422;
     case "vision_error":
       return 502;

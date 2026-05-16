@@ -16,19 +16,12 @@ const ParseSuccessSchema = z.object({
   data: z.object({
     fen: FenSchema,
     sideToMove: z.enum(["w", "b"]),
-    confidence: z.number().min(0).max(1),
   }),
 });
 
 const ParseFailureSchema = z.object({
   ok: z.literal(false),
-  reason: z.enum([
-    "no_chess_board_detected",
-    "illegal_position",
-    "low_confidence",
-    "vision_error",
-    "invalid_input",
-  ]),
+  reason: z.enum(["illegal_position", "vision_error", "invalid_input"]),
   detail: z.string().optional(),
 });
 

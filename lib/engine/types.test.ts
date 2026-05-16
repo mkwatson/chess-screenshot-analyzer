@@ -1,29 +1,23 @@
 import { describe, it, expect } from "vitest";
 import { FenSchema, AnalyzeInputSchema, AnalyzeOutputSchema } from "./types";
 
+// Minimal tests: FenSchema delegates to chessops (parseFen + Chess.fromSetup).
+// chessops has its own test suite; we don't duplicate. These three tests
+// only prove "our .refine() wraps chessops correctly" — nothing more.
 describe("FenSchema", () => {
-  it("accepts the starting position FEN", () => {
+  it("accepts a chessops-legal FEN (starting position)", () => {
     const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     expect(FenSchema.parse(fen)).toBe(fen);
   });
 
-  it("accepts a mid-game FEN", () => {
-    const fen = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
-    expect(FenSchema.parse(fen)).toBe(fen);
-  });
-
-  it("rejects a non-FEN string", () => {
-    expect(() => FenSchema.parse("hello world")).toThrow();
-  });
-
-  it("rejects an empty string", () => {
+  it("rejects an empty string (Zod .min(1))", () => {
     expect(() => FenSchema.parse("")).toThrow();
   });
 
-  it("rejects an FEN with wrong side-to-move marker", () => {
-    expect(() =>
-      FenSchema.parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1"),
-    ).toThrow();
+  it("rejects an illegal position (chessops .refine())", () => {
+    // Syntactically valid but illegal: two white kings.
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBKK w KQkq - 0 1";
+    expect(() => FenSchema.parse(fen)).toThrow();
   });
 });
 

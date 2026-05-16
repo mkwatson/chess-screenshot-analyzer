@@ -5,42 +5,61 @@ import { Chess } from "chessops/chess";
 import { parseFen } from "chessops/fen";
 import { ParseInputSchema, type ParseOutput } from "./types";
 
-// Output schema for the Gemini call. Wider than ParseOutputSchema's success
-// branch — Gemini sometimes returns trailing whitespace or extra fields that
-// don't violate the schema but aren't strictly the FEN regex; we re-validate
-// downstream via chessops.
-const GeminiOutputSchema = z.object({
-  fen: z.string().min(1),
+// Model: gemini-3.1-flash-lite + structured 8x8-grid output is strictly
+// optimal for board parsing — see scripts/test-vision.py and AGENTS.md
+// "structured output > free-form when there's a schema-able answer".
+const MODEL = google("gemini-3.1-flash-lite");
+
+// Empty string for an empty square; otherwise one chess-piece letter.
+const PieceCell = z.enum(["", "p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]);
+const Row = z.array(PieceCell).length(8);
+const GridSchema = z.object({
+  // board[0] = rank 8 (top of image), board[7] = rank 1.
+  // board[*][0] = file a (left of image), board[*][7] = file h.
+  board: z.array(Row).length(8),
   sideToMove: z.enum(["w", "b"]),
-  confidence: z.number().min(0).max(1),
+  // castling/enPassant are best-effort — we default if model returns empties.
+  castling: z.string(),
+  enPassant: z.string(),
 });
 
-const SYSTEM_INSTRUCTION = `You are a chess board image parser. Given an image \
-containing a chess position, return the FEN representation in standard format \
-(piece placement / side / castling / en passant / halfmove / fullmove). Use \
-uppercase letters for white pieces and lowercase for black. If you cannot \
-detect a chess board in the image, respond with confidence: 0 and best-guess \
-empty board. Confidence is your subjective certainty in the parse (0-1).`;
+const SYSTEM_INSTRUCTION = `You parse a chess board image and return the piece on every square. \
+Use empty string for empty squares. Use lowercase for black pieces (p n b r q k) \
+and uppercase for white (P N B R Q K). board[0] is rank 8 (top of image, black's back rank); \
+board[7] is rank 1 (bottom, white's back rank). Within each row, index 0 is file a, index 7 is file h.`;
 
-// Direct Google AI Studio provider (bypassing the Vercel AI Gateway).
-// Reason: as of 2026-05-16 the Gateway is throttling free credits due to abuse.
-// Model choice: `gemini-2.5-flash` is the current GA Flash that Vercel's own
-// docs use; `gemini-3-flash-preview` exists but is preview-tagged. The spec
-// originally said "gemini-3-flash" but that model ID was never released —
-// 3 Pro is `gemini-3-pro-preview`, 3 Flash is `gemini-3-flash-preview`. Stick
-// to 2.5-flash until 3-flash is GA. Vision capability + responseSchema +
-// thinking knobs all supported on 2.5-flash.
-const MODEL = google("gemini-2.5-flash");
+function gridToFen(g: z.infer<typeof GridSchema>): string {
+  const ranks = g.board.map((row) => {
+    let s = "";
+    let empty = 0;
+    for (const cell of row) {
+      if (cell === "") {
+        empty += 1;
+      } else {
+        if (empty > 0) {
+          s += String(empty);
+          empty = 0;
+        }
+        s += cell;
+      }
+    }
+    if (empty > 0) s += String(empty);
+    return s;
+  });
+  // Default the meta fields when the model returns blanks. KQkq is correct for
+  // any position where neither king nor rook has been confirmed as moved — the
+  // chess engine will still find the right best-move from the piece placement;
+  // it just may overstate castling rights. Refine via editPosition (Plan 6).
+  const castling = /^[KQkq]+$/.test(g.castling) ? g.castling : "KQkq";
+  const enPassant = /^[a-h][36]$/.test(g.enPassant) ? g.enPassant : "-";
+  return `${ranks.join("/")} ${g.sideToMove} ${castling} ${enPassant} 0 1`;
+}
 
 function isLegalFen(fen: string): { ok: true } | { ok: false; reason: string } {
   const parsed = parseFen(fen);
-  if (parsed.isErr) {
-    return { ok: false, reason: parsed.error.message };
-  }
+  if (parsed.isErr) return { ok: false, reason: parsed.error.message };
   const pos = Chess.fromSetup(parsed.value);
-  if (pos.isErr) {
-    return { ok: false, reason: pos.error.message };
-  }
+  if (pos.isErr) return { ok: false, reason: pos.error.message };
   return { ok: true };
 }
 
@@ -48,15 +67,15 @@ async function callGemini(args: {
   imageBase64: string;
   mimeType: string;
   retryFeedback?: string;
-}): Promise<{ fen: string; sideToMove: "w" | "b"; confidence: number }> {
+}): Promise<{ fen: string; sideToMove: "w" | "b" }> {
   const prompt = args.retryFeedback
-    ? `The previous parse produced an illegal position: ${args.retryFeedback}. Try again carefully, paying close attention to piece positions.`
-    : "Read this chess position and return the FEN.";
+    ? `The previous parse produced an illegal position: ${args.retryFeedback}. Re-examine each square carefully.`
+    : "Identify the piece on every square.";
 
   const result = await generateObject({
     model: MODEL,
     system: SYSTEM_INSTRUCTION,
-    schema: GeminiOutputSchema,
+    schema: GridSchema,
     messages: [
       {
         role: "user",
@@ -72,25 +91,19 @@ async function callGemini(args: {
     ],
     providerOptions: {
       google: {
-        // gemini-2.5-flash: thinkingBudget is a token cap (0 disables thinking
-        // entirely). Vision parse doesn't need reasoning. When we move to
-        // gemini-3-*-preview, switch to thinkingLevel: 'minimal' instead.
-        thinkingConfig: { thinkingBudget: 0 },
+        mediaResolution: "MEDIA_RESOLUTION_HIGH",
+        thinkingConfig: { thinkingLevel: "low" },
       },
     },
   });
 
-  return result.object;
+  return { fen: gridToFen(result.object), sideToMove: result.object.sideToMove };
 }
 
 export async function parseScreenshot(rawInput: unknown): Promise<ParseOutput> {
   const parsed = ParseInputSchema.safeParse(rawInput);
   if (!parsed.success) {
-    return {
-      ok: false,
-      reason: "invalid_input",
-      detail: parsed.error.message,
-    };
+    return { ok: false, reason: "invalid_input", detail: parsed.error.message };
   }
 
   let attempt: Awaited<ReturnType<typeof callGemini>>;
@@ -136,10 +149,6 @@ export async function parseScreenshot(rawInput: unknown): Promise<ParseOutput> {
 
   return {
     ok: true,
-    data: {
-      fen: attempt.fen,
-      sideToMove: attempt.sideToMove,
-      confidence: attempt.confidence,
-    },
+    data: { fen: attempt.fen, sideToMove: attempt.sideToMove },
   };
 }

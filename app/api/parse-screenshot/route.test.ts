@@ -27,7 +27,6 @@ describe("POST /api/parse-screenshot", () => {
       data: {
         fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         sideToMove: "w",
-        confidence: 0.9,
       },
     });
     const res = await POST(makeRequest({ imageBase64: "iVBORw==", mimeType: "image/png" }));
