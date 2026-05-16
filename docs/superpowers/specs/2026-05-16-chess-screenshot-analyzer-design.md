@@ -585,29 +585,51 @@ The eval loop is what tunes the system prompt and the `prepareStep` heuristics o
 
 ---
 
-## 9. Build sequence (high-level)
+## 9. Work areas (concerns, not order)
 
-Detailed implementation plan comes next via the writing-plans skill. This is the build order so the plan can structure itself. The order is optimized so that **a tappable PWA on the developer's phone exists at step 1**, and every subsequent step adds visible, testable behavior — not "build a backend for a week then plug in a UI."
+A by-concern inventory of what must be built. **Order of execution is in Section 10** (vertical thin slices); this section is a reference for "what fits in which slice."
 
-1. **Deployed PWA skeleton + code-quality baseline (Day 1).** Next.js + TS (strict mode) + Tailwind v4 + shadcn/ui + Vercel deployment. Manifest, viewport meta, safe-area styling, theme color. Static landing screen with the app title. A2HS-installable on iOS. **Tooling wired in this same step** (per Appendix C.4): `tsconfig.json` strict flags, ESLint with footgun rules, Prettier, husky + lint-staged pre-commit, CI workflow running type-check + lint + format on every push. **Preview URL → phone home screen the same hour the project starts.**
-2. **Chat shell with mock data.** assistant-ui mounted, hardcoded fake conversation rendered including a faked board, faked options chips, a faked editPosition drawer. No backend, no AI. The phone-installed app now *feels* like the product — every layout, gesture, safe-area issue surfaces immediately.
-3. **Board renderer integration.** Thin React wrapper around chessground; cburnett piece assets; chessops integration helpers (`chessgroundDests`, `parseFen`, etc.). Replace the faked board in mock data with a real chessground rendering of a hardcoded FEN. Phone-test touch quality.
-4. **Persistence layer.** Dexie schema, `ChatRepository` interface + Dexie adapter, streaming-write coalescer, `useLiveQuery` wiring. Replace mock conversations with real Dexie-backed ones (still hardcoded message content — no AI yet). Multi-thread runtime adapter for assistant-ui wired up so the chat-list Drawer shows real chats.
-5. **Stockfish backend.** Warm singleton in module scope, `analyzePosition(fen, opts)` server function exposed via a minimal test endpoint. Hit it from a debug page with hardcoded FENs; confirm depth/time/MultiPV behavior. Not yet wired to the agent.
-6. **Agent shell, first turn end-to-end.** `/api/chat` with `ToolLoopAgent`, all five tools defined and wired to real implementations (server tools to real services; render-only tools to assistant-ui registrations from step 2). System prompt v1 following the 8-section template. AI Gateway + `@ai-sdk/google` for Gemini. `prepareStep` with the model-routing heuristics. **Real conversation now works on phone preview URL.**
-7. **Composer + paste UX.** Paste-from-clipboard handler, `SimpleImageAttachmentAdapter`, drop zone for desktop, file picker fallback. Forced `mode: 'ANY'` for `parseScreenshot` when an image attachment is present.
-8. **PWA polish.** `@serwist/next` service worker, A2HS banner with iOS-specific instructions, `visualViewport`-based keyboard handling, persistent-storage request after first user message.
-9. **Resumable streams.** Upstash Redis store, `useChat({ resume: true })`, `consumeStream: true` on the response. Phone-test backgrounding mid-analysis.
-10. **Suggestions adapter.** Generates 3-4 follow-up chips after each agent response via a small Gemini Flash call.
-11. **Observability + first eval loop.** PostHog client init (autocapture, replay, errors). `instrumentation.ts` with `PostHogSpanProcessor`. Application-level event emission (engine_disagreement, latency_overspend, etc.). Begin logging real turns. Start a `golden-set/` directory in the repo and capture 5-10 real traces per usage session.
-12. **Mobile UI polish.** sonner toasts, vaul chat-list Drawer with snap points + overflow menu (export, clear), image preview Dialog, `editPosition` Drawer refinement, BotID Basic on `/api/chat`.
-13. **System prompt + heuristic iteration.** Using PostHog telemetry + session replays + golden set: tune the system prompt section by section, tighten `prepareStep` escalation heuristics, refine tool descriptions where the model misbehaves. This step never really "completes" — it's the ongoing eval loop.
+- **Tooling baseline:** Next.js + TS strict + Tailwind v4 + shadcn/ui; ESLint + Prettier + husky + lint-staged; CI on every push (see Appendix C.4).
+- **Deployment:** Vercel project, `vercel.ts` config, Deployment Protection on previews, BotID Basic on chat endpoint, Web Analytics + Speed Insights.
+- **Chess rendering:** Thin React wrapper around chessground; cburnett piece assets; chessops integration (`chessgroundDests`, `parseFen`, etc.).
+- **Chess engine:** `@se-oss/stockfish` warm singleton; `analyzePosition(fen, opts)` server function; `info` event streaming.
+- **Vision:** `parseScreenshot` server tool via `@ai-sdk/google` Gemini Flash with structured output + chessops validation.
+- **Agent runtime:** AI SDK v6 `ToolLoopAgent`; five tools (server + render-only); `stopWhen` + `prepareStep` per Section 4; AI Gateway routing.
+- **Chat UI:** assistant-ui shell with tool UI registrations; composer with paste-image + file picker; suggestions adapter.
+- **Persistence:** Dexie schema; `ChatRepository` interface + Dexie adapter; streaming-write coalescer; assistant-ui `useRemoteThreadListRuntime` wiring.
+- **PWA:** Manifest + iOS-specific meta tags; `@serwist/next` service worker; A2HS banner; safe areas; `visualViewport` keyboard handling.
+- **Resumable streams:** Upstash Redis store; `useChat({ resume: true })`; `consumeStream: true`.
+- **Mobile chrome:** vaul chat-list Drawer; sonner toasts; image preview Dialog; `editPosition` Drawer.
+- **Observability:** PostHog client (autocapture + replay + errors); `instrumentation.ts` with PostHog OTel; application events; golden-set in repo.
+- **System prompt + heuristic tuning:** ongoing, driven by telemetry and the golden set.
 
-After step 2, every step lands on the developer's phone via Vercel preview URLs (Deployment Protection keeps them private). The cycle is: code → push → preview URL → install on phone via QR code → tap.
+## 10. Implementation strategy
 
----
+Implementation proceeds as **vertical thin slices** — each slice cuts through every layer the slice needs (UI + backend + persistence + agent if applicable) and delivers an end-to-end user-visible capability. Each slice is a self-contained plan document under `docs/superpowers/plans/`. Each plan is shippable to a Vercel preview URL on its own.
 
-## 10. Open considerations for v1+
+Rationale (per principles in Section 1.1):
+- Earliest possible "try bits" — the first slice is phone-tappable in a day or two, not a week.
+- Risk surfaces continuously, one piece at a time, rather than piling up.
+- Each slice = one sit-down session; finished slices are demos, not WIPs.
+
+**The 10 slices (each = one plan document):**
+
+| # | Slice | Demonstrable result |
+|---|---|---|
+| 1 | Static board + engine call | Hardcoded FEN → Vercel function → Stockfish → board with arrow. No AI, no vision, no chat. Proves the full deployment stack. |
+| 2 | Vision parse | Replace hardcoded FEN with paste-image → Gemini vision → FEN → render. |
+| 3 | One-turn coach chat | Replace static page with chat input → agent loop (parse + analyze + respond) → message rendered inline. |
+| 4 | Multi-turn + Dexie persistence | Real assistant-ui shell, follow-ups, persistence via `ChatRepository`. |
+| 5 | Multi-chat list | Chat-list Drawer (vaul), switching between persisted chats. |
+| 6 | Interactive tools | `showOptions` and `editPosition` with `addToolOutput` round-trips. |
+| 7 | PWA finalize | A2HS banner, `@serwist/next` service worker, safe areas, visualViewport keyboard handling. |
+| 8 | Resumable streams + observability | Upstash Redis, `useChat({ resume: true })`, `consumeStream: true`, PostHog (LLM Analytics + Replay + Errors), golden-set bootstrap. |
+| 9 | Suggestions + mobile polish | sonner toasts, suggestion chips after agent responses, drawer refinements, BotID on chat endpoint. |
+| 10 | Eval loop iteration | Open-ended: system prompt evolution, `prepareStep` heuristic tuning driven by telemetry + golden-set + thumbs-down feedback. |
+
+Plans are written one at a time, in order. After each slice ships, the next plan can incorporate learnings from the prior — slice 4's spec might tighten based on what we discover in slice 3.
+
+## 11. Open considerations for v1+
 
 - **Cloud sync of chats** — add Dexie Cloud (config-only swap), or implement the server-side `ChatRepository` adapter against Neon + Clerk for Google SSO.
 - **Long-term memory** — Letta/Mem0 behind a `loadHistory()` wrapper at the agent endpoint.
