@@ -20,8 +20,11 @@
     "pnpm": ">=10.0.0"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "^3.0.115",
+    "@ai-sdk/google": "^3.0.75",
     "@base-ui/react": "^1.4.1",
     "@se-oss/stockfish": "^1.0.1",
+    "ai": "^6.0.184",
     "chessground": "^9.2.1",
     "chessops": "^0.15.0",
     "class-variance-authority": "^0.7.1",
