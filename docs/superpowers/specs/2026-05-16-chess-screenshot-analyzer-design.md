@@ -589,7 +589,7 @@ The eval loop is what tunes the system prompt and the `prepareStep` heuristics o
 
 Detailed implementation plan comes next via the writing-plans skill. This is the build order so the plan can structure itself. The order is optimized so that **a tappable PWA on the developer's phone exists at step 1**, and every subsequent step adds visible, testable behavior — not "build a backend for a week then plug in a UI."
 
-1. **Deployed PWA skeleton (Day 1).** Next.js + TS + Tailwind v4 + shadcn/ui + Vercel deployment. Manifest, viewport meta, safe-area styling, theme color. Static landing screen with the app title. A2HS-installable on iOS. **Preview URL → phone home screen the same hour the project starts.**
+1. **Deployed PWA skeleton + code-quality baseline (Day 1).** Next.js + TS (strict mode) + Tailwind v4 + shadcn/ui + Vercel deployment. Manifest, viewport meta, safe-area styling, theme color. Static landing screen with the app title. A2HS-installable on iOS. **Tooling wired in this same step** (per Appendix C.4): `tsconfig.json` strict flags, ESLint with footgun rules, Prettier, husky + lint-staged pre-commit, CI workflow running type-check + lint + format on every push. **Preview URL → phone home screen the same hour the project starts.**
 2. **Chat shell with mock data.** assistant-ui mounted, hardcoded fake conversation rendered including a faked board, faked options chips, a faked editPosition drawer. No backend, no AI. The phone-installed app now *feels* like the product — every layout, gesture, safe-area issue surfaces immediately.
 3. **Board renderer integration.** Thin React wrapper around chessground; cburnett piece assets; chessops integration helpers (`chessgroundDests`, `parseFen`, etc.). Replace the faked board in mock data with a real chessground rendering of a hardcoded FEN. Phone-test touch quality.
 4. **Persistence layer.** Dexie schema, `ChatRepository` interface + Dexie adapter, streaming-write coalescer, `useLiveQuery` wiring. Replace mock conversations with real Dexie-backed ones (still hardcoded message content — no AI yet). Multi-thread runtime adapter for assistant-ui wired up so the chat-list Drawer shows real chats.
@@ -643,7 +643,7 @@ The five failure modes our chess agent is most likely to hit, and the prevention
    *Prevention:* same hard rule as failure mode #2 ("NEVER assess a move without `analyzePosition`"). Plus tone rule in Section 4 of the system prompt: "Disagreement is helpful; sycophancy is harmful. If `analyzePosition` shows the user's move is bad, say so directly and explain why."
    *Detection:* `coaching.engine_disagreement` event, specifically when the disagreement *is with a user-proposed move* — a higher-severity variant worth alerting.
 
-## Appendix B — Principles checklist (for code review)
+## Appendix B — Product/architecture checklist (for code review)
 
 When implementing, every PR should pass these:
 
@@ -655,3 +655,104 @@ When implementing, every PR should pass these:
 - [ ] If we're writing to Dexie during a stream, are we coalescing?
 - [ ] If we're adding a tool, is it registered at app root for replay correctness?
 - [ ] If we're adding a vendor, what does it give us for free that we're not yet using?
+
+## Appendix C — Code-quality and type-driven development
+
+These principles apply to every line of code in the project. They are enforced by tooling wherever possible (Appendix C.4), so the principles below describe the *intent* — the tooling enforces the rest.
+
+### C.1 The five qualities
+
+Every piece of code should be:
+
+1. **Minimal** — every line is a tax. New code must justify its existence. Default to subtraction.
+2. **Clear** — obvious to a reader six months from now without context. Identifiers are documentation. No cleverness, no implicit magic.
+3. **Maintainable** — change is cheap. Refactoring is safe. The next person can touch the code without fear.
+4. **Extensible at well-chosen seams** — interfaces, repositories, tool contracts where future change is real. *Never* plugin systems or configurability for hypothetical futures.
+5. **Testable** — pure functions, narrow inputs, explicit dependencies. Testability is a proxy for good design; hard-to-test code is hard-to-change code.
+
+### C.2 Shift-left
+
+Catch defects as far left in the SDLC as possible, using checks that are **deterministic, fast, and machine-enforced**:
+
+- TypeScript strict — compile-time errors are free
+- Zod validation at every untyped boundary — runtime errors caught at the edge, not deep inside
+- ESLint with footgun rules — at edit time
+- Prettier auto-format — never debate style
+- Pre-commit hooks — fast path on changed files only
+- CI — full path on every push
+
+**Determinism beats heuristics.** If TypeScript can catch it, don't write a test for it. If a Zod schema can validate it, don't trust the caller. If a linter rule can enforce it, don't rely on code review or memory. Move every check to the cheapest, most reliable tier that can perform it.
+
+### C.3 Type-driven development
+
+Push as much as we can into the type system. Keep types themselves clear.
+
+**Principles:**
+- Sketch types first; write code that satisfies them. Compiler is a design tool.
+- Make illegal states unrepresentable *where the illegal state is a real risk*. Not as a religious exercise.
+- **Zod schemas as the single source of truth** for boundary types. `z.infer<typeof schema>` derives TS types from runtime validators. Never maintain duplicate runtime validators and TS types.
+- **Lean on library-provided types:** AI SDK's `InferAgentUIMessage<typeof agent>`, `tool()` schema inference, chessops's `Position` / `Move` / `Square` / `Piece`, Dexie's `EntityTable<T>`. Don't redefine what we get.
+- **Discriminated unions for fallible results:** `{ ok: true; data: T } | { ok: false; reason: string; suggestion?: string }`. Compiler forces both branches at every call site.
+- **Branded types only where confusion is real.** Likely `ChatId`, `MessageId`, possibly `Fen`. Not for everything that happens to be a string.
+
+**Anti-spaghetti:**
+- **Climb the complexity ladder slowly.** Type/interface → union → discriminated union → generic with 1 param → generic with 2 params → generic with constraints. Stop as soon as the invariant is captured.
+- **No type-level computation** — no recursive conditional types, parser combinators in the type system, or template-literal type magic beyond what standard utility types provide. If TypeScript's standard repertoire can't express it cleanly, the invariant belongs at runtime.
+- **No deep generic chains.** A generic with more than 2 type parameters is almost always wrong.
+- **If a type needs a comment to understand, simplify it first.** Failing that, one short `why` line — never explain *what* the type is.
+- **Compiler errors must read like English problems**, not compiler internals. If you find yourself debugging type errors that span 100+ lines, the type is too clever.
+- **Function overloads only when input-output relationships genuinely can't be a discriminated union.**
+
+### C.4 Tooling baseline (wired in build step 1)
+
+**`tsconfig.json`:**
+- `strict: true`
+- `noUncheckedIndexedAccess: true`
+- `exactOptionalPropertyTypes: true`
+- `noImplicitOverride: true`
+- `noFallthroughCasesInSwitch: true`
+- `target: ES2022`, `module: ESNext`, `moduleResolution: bundler`
+
+**ESLint config:**
+- `@typescript-eslint/recommended-type-checked` + `@typescript-eslint/stylistic-type-checked`
+- Footgun rules promoted to `error`:
+  - `@typescript-eslint/no-explicit-any`
+  - `@typescript-eslint/no-floating-promises`
+  - `@typescript-eslint/no-misused-promises`
+  - `@typescript-eslint/no-non-null-assertion`
+  - `react-hooks/exhaustive-deps`
+- No `// eslint-disable-*` without an inline comment explaining *why*
+
+**Prettier:** default config; auto-format on save (editor) and pre-commit (lint-staged).
+
+**Pre-commit hook (husky + lint-staged):** on changed files only — `tsc --noEmit` (project-wide for correctness), ESLint `--fix`, Prettier. Target: under 5 seconds for typical edits, so it never gets skipped.
+
+**CI on every push:**
+- `tsc --noEmit` (full project)
+- `eslint .`
+- `prettier --check .`
+- `next build` verifies
+- Golden-set eval (once it exists — Section 8.3)
+
+Pre-commit and CI together: nothing reaches `main` without strict types, zero lint errors, and a clean build.
+
+### C.5 Style conventions
+
+- **Plain functions over classes** by default. Classes only when state + behavior are genuinely coupled (rare in this codebase).
+- **Co-locate helpers with their first caller.** Promote to a shared module on the *second* use case, not the first.
+- **No `utils/` or `helpers/` dumping grounds.** Helpers live in named domain modules (`lib/chess/`, `lib/persistence/`, `lib/agent/`).
+- **Names follow intent, not implementation.** `getChatById` over `findChatRow`; `analyzePosition` over `runEngineWasm`.
+- **One module = one concern.** A file approaching ~300 lines is a signal the module boundary is wrong, not a signal to split arbitrarily.
+- **Comments explain *why*, never *what*.** The code shows what.
+
+### C.6 What we won't do
+
+- Plugin systems, registries for hypothetical extensions, configurable behavior for behaviors we don't yet have.
+- Feature flags without a documented retirement date.
+- Tests for trivial code (simple getters, pass-through transforms).
+- Snapshot tests for output that isn't strictly stable.
+- Code or abstractions added "in case we ever need to..." — wait for the *second* concrete use case before abstracting.
+- `any` or `@ts-ignore` without an inline justification comment.
+- "Helper" wrappers around standard library functions that don't add behavior.
+- Premature performance optimization. Optimize *after* measurement, never before.
+- Mocking what we own. If a module is hard to use real in tests, fix the module, not the test.
