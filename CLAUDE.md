@@ -7,8 +7,9 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 ### Current execution state
 
 - **Plan 0 (rails) — SHIPPED.** Production live, CI gates merges, three-layer secret-leak protection active (gitleaks pre-commit + CI + GitHub native scanning).
-- **Plan 1 (static board + engine call) — SHIPPED.** Production has a starting-position board and an Analyze button that POSTs to `/api/analyze`. Server-side `@se-oss/stockfish@1.0.1` (Stockfish 17.1 WASM) runs as a module-scope warm singleton at depth 14 and returns the best move; the board paints it as a green arrow. Vitest 4 wired with `// @vitest-environment jsdom` pragma for DOM tests.
-- **Next plan:** Slice 2 — Vision parse (paste image → FEN). Plan document not yet written.
+- **Plan 1 (static board + engine call) — SHIPPED.** Production has a starting-position board and an Analyze button that POSTs to `/api/analyze`. Server-side `@se-oss/stockfish@1.0.1` (Stockfish 17.1 WASM) runs as a module-scope warm singleton at depth 14 and returns the best move; the board paints it as a green arrow.
+- **Plan 2 (vision parse) — SHIPPED.** Production accepts a pasted chess screenshot; the server calls Gemini 3 Flash directly via `@ai-sdk/google` (AI Gateway deferred — see spec Section 3.4); chessops validates legality with one retry on illegal positions; parsed board renders; the Plan 1 Analyze button operates on whatever was parsed.
+- **Next plan:** Slice 3 — One-turn coach chat (real agent loop via AI SDK v6 `ToolLoopAgent`; replaces the two single-purpose endpoints with one streaming chat endpoint backed by the five tools).
 - **Latest commit:** see `git log -1`.
 
 ### Known follow-ups (small, deferred)
