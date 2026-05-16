@@ -20,6 +20,7 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 - **GitHub non-provider secret-pattern scanning** not enabled (toggle not visible on Hobby public repos; likely requires GHAS).
 - **`chessground@9.2.1` is marked deprecated on npm** ("Package no longer supported"). Lichess may have moved to a renamed package (e.g. `@lichess-org/chessground`). API works for now. Investigate before Plan 4+ when we lean on chessground more heavily.
 - **Vercel function cold start** for `/api/analyze` is slow (~30s the first time, hitting our `maxDuration: 30` boundary on the very first request after a fresh deploy). Stockfish WASM is 79 MB and traced into the function bundle; first invocation pays the WASM init cost. Warm requests are fast. Worth investigating Fluid Compute prewarming or moving init to the module scope's first await.
+- **iOS PWA standalone-mode caching:** without a service worker, the home-screen PWA shows stale content after a deploy. Visiting the same URL fresh in Safari works. **Plan 7 (PWA finalize) MUST address this** via `@serwist/next` with skipWaiting + clientsClaim, ideally with a refresh prompt or auto-reload on new build. Until then: force-quit + relaunch the PWA, or re-install from Safari.
 
 ### Behavioral preferences
 
