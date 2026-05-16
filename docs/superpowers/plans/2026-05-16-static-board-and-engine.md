@@ -876,7 +876,10 @@ EOF
 
 - [ ] **Step 1: Write the failing test.** Create `lib/chess/board.test.tsx`:
 
+> **NOTE (Task 2 fallback):** Vitest 4 removed `environmentMatchGlobs` from the TypeScript type for `InlineConfig` (typecheck error TS2769). Task 2 fell back to the pragma approach, so this file MUST start with `// @vitest-environment jsdom` as its very first line — otherwise the test runs in the default `node` env and `render()` will throw.
+
 ```tsx
+// @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { Board } from "./board";
