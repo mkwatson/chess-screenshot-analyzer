@@ -70,7 +70,7 @@ All deferred features should remain *additive* in the architecture — adding an
 │  └─────────┬──────────────────────┬───────┘  │
 │            │                      │           │
 │   ┌────────▼─────────┐   ┌────────▼────────┐ │
-│   │ AI Gateway →     │   │ Warm singleton  │ │
+│   │ @ai-sdk/google → │   │ Warm singleton  │ │
 │   │ Gemini 3 (Flash, │   │ Stockfish 17.1  │ │
 │   │ Pro, Deep Think) │   │ WASM child proc │ │
 │   └──────────────────┘   └─────────────────┘ │
@@ -95,7 +95,7 @@ All deferred features should remain *additive* in the architecture — adding an
 | Framework | Next.js (App Router) + TypeScript + Tailwind v4 + shadcn/ui | MIT |
 | Hosting | Vercel — Fluid Compute, Node runtime everywhere | — |
 | Config | `vercel.ts` via `@vercel/config` (not `vercel.json`) | — |
-| LLM gateway | Vercel AI Gateway | — |
+| LLM gateway | None for v0 — calls go direct to `@ai-sdk/google`. Vercel AI Gateway deferred (see Section 3.3) | — |
 | LLM provider | Google AI Studio (Developer API) via `@ai-sdk/google` | — |
 | Models | `gemini-3-flash` (chat + vision), `gemini-3.1-pro` (escalation), `gemini-3-deep-think` (rare) | — |
 | Agent runtime | Vercel AI SDK v6 `ToolLoopAgent` + `@ai-sdk/react` `useChat` | MIT |
@@ -135,7 +135,6 @@ If the product ever pivots to a closed-source commercial release, the chess libr
 
 ### 3.3 Vercel platform features adopted in v0
 
-- **AI Gateway** — wraps Gemini for observability, fallback, ZDR, no markup
 - **BotID Basic** — wraps `/api/chat` to block automated abuse
 - **Web Analytics + Speed Insights** — free Hobby allotment, auto-pauses at cap
 - **Upstash Redis (via Vercel Marketplace)** — exclusively as the resumable-streams store (10-minute TTL keys). Not used as a general cache. Free tier sufficient.
@@ -145,6 +144,7 @@ If the product ever pivots to a closed-source commercial release, the chess libr
 
 ### 3.4 Vercel features explicitly deferred
 
+- **Vercel AI Gateway** — moved here from 3.3 on 2026-05-16. Reasons: (1) requires a credit card on file even for free credits, (2) free credits were throttled due to abuse, (3) BYOK is supported but reduces Gateway marginal value to "unified observability dashboard," which PostHog LLM Analytics + Google AI Studio's console already cover for single-provider v0. Calls go direct via `@ai-sdk/google`. Revisit when: we add a second LLM provider, want centralized fallback, or hit observability friction Google's console can't satisfy.
 - Vercel Blob (screenshots stored as base64 in Dexie for v0)
 - Edge Config (no feature flags or shared config that warrants it; the one PostHog feature flag we use is hosted by PostHog)
 - Routing Middleware (no geo/A-B needs)
@@ -173,7 +173,7 @@ All five tools are defined server-side via the AI SDK v6 `tool()` factory. Three
 
 ### 4.2 Model strategy
 
-Routed via the Vercel AI Gateway, all calls go through `@ai-sdk/google`. **Posture: default Flash, escalate to Pro on Stockfish-output heuristics.** Not the other way around.
+Calls go direct via `@ai-sdk/google` (AI Gateway deferred — see Section 3.4). **Posture: default Flash, escalate to Pro on Stockfish-output heuristics.** Not the other way around.
 
 | Role | Model | `thinkingLevel` | When |
 |---|---|---|---|
@@ -546,7 +546,7 @@ When the user message contains a paste, the agent should be steered toward `pars
 ### 7.5 Environment & config
 
 - `vercel.ts` defines the project (framework, build command, headers).
-- `vercel env pull` pulls dev secrets (`GOOGLE_GENERATIVE_AI_API_KEY`, `POSTHOG_KEY`, `AI_GATEWAY_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) to `.env.local`. The Upstash variables are auto-provisioned by the Vercel Marketplace integration.
+- `vercel env pull` pulls dev secrets (`GOOGLE_GENERATIVE_AI_API_KEY`, `POSTHOG_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) to `.env.local`. The Upstash variables are auto-provisioned by the Vercel Marketplace integration.
 - Production secrets configured in the Vercel dashboard.
 
 ---
@@ -597,7 +597,7 @@ A by-concern inventory of what must be built. **Order of execution is in Section
 - **Chess rendering:** Thin React wrapper around chessground; cburnett piece assets; chessops integration (`chessgroundDests`, `parseFen`, etc.).
 - **Chess engine:** `@se-oss/stockfish` warm singleton; `analyzePosition(fen, opts)` server function; `info` event streaming.
 - **Vision:** `parseScreenshot` server tool via `@ai-sdk/google` Gemini Flash with structured output + chessops validation.
-- **Agent runtime:** AI SDK v6 `ToolLoopAgent`; five tools (server + render-only); `stopWhen` + `prepareStep` per Section 4; AI Gateway routing.
+- **Agent runtime:** AI SDK v6 `ToolLoopAgent`; five tools (server + render-only); `stopWhen` + `prepareStep` per Section 4; calls go direct via `@ai-sdk/google` (AI Gateway deferred).
 - **Chat UI:** assistant-ui shell with tool UI registrations; composer with paste-image + file picker; suggestions adapter.
 - **Persistence:** Dexie schema; `ChatRepository` interface + Dexie adapter; streaming-write coalescer; assistant-ui `useRemoteThreadListRuntime` wiring.
 - **PWA:** Manifest + iOS-specific meta tags; `@serwist/next` service worker; A2HS banner; safe areas; `visualViewport` keyboard handling.
@@ -683,6 +683,8 @@ When implementing, every PR should pass these:
 - [ ] If we're writing to Dexie during a stream, are we coalescing?
 - [ ] If we're adding a tool, is it registered at app root for replay correctness?
 - [ ] If we're adding a vendor, what does it give us for free that we're not yet using?
+- [ ] If we're adding a test, does any other mechanism in the shift-left hierarchy (type / Zod / lint / build / preview deploy) already prove the same guarantee? If yes, prefer that over the test.
+- [ ] If we just learned a new rule, did we encode it in an artifact (AGENTS.md, lint rule, hook, reviewer checklist) so it self-applies next time?
 
 ## Appendix C — Code-quality and type-driven development
 
@@ -698,18 +700,42 @@ Every piece of code should be:
 4. **Extensible at well-chosen seams** — interfaces, repositories, tool contracts where future change is real. *Never* plugin systems or configurability for hypothetical futures.
 5. **Testable** — pure functions, narrow inputs, explicit dependencies. Testability is a proxy for good design; hard-to-test code is hard-to-change code.
 
+### C.1a Tests are not exempt from minimum-complexity
+
+Tests are source we maintain. They drift. They add CI latency. They are subject to the same five qualities above.
+
+- Don't write tests for coverage. Write tests where they prove something *no other mechanism in the shift-left hierarchy proves*.
+- If a TypeScript type, Zod schema, ESLint rule, DB constraint, or preview-deploy smoke already enforces a guarantee, a test re-asserting that same guarantee is duplication.
+- Prefer one integration test that walks the real flow over five mocked unit tests that re-state types.
+- Mocks have an upkeep cost. Each mock is a second source of truth that can drift from the real implementation. Use them sparingly.
+- A test that exists "just in case" is technical debt. Delete it.
+
 ### C.2 Shift-left
 
-Catch defects as far left in the SDLC as possible, using checks that are **deterministic, fast, and machine-enforced**:
+Catch defects as far left in the SDLC as possible, using checks that are **deterministic, fast, and machine-enforced**. Strict hierarchy (cheapest first; each tier should fully exhaust before reaching for the next):
 
-- TypeScript strict — compile-time errors are free
-- Zod validation at every untyped boundary — runtime errors caught at the edge, not deep inside
-- ESLint with footgun rules — at edit time
-- Prettier auto-format — never debate style
-- Pre-commit hooks — fast path on changed files only
-- CI — full path on every push
+1. **TypeScript types** — compile-time, free, instant
+2. **Zod schemas** — runtime validation at every untyped boundary; types are inferred from the same schema (single source of truth)
+3. **ESLint rules** — footgun rules promoted to errors
+4. **DB constraints** — for any persistent data (Plan 4+); enforce shape at the storage tier so application code can't violate
+5. **Build-time checks** — `pnpm build` failing on bad config
+6. **Deterministic CI** — type-check, lint, format, build, golden-set evals
+7. **Preview deploys** — smoke-test the real bundle on real Vercel runtime
+8. **Tests we maintain** — last resort, only when nothing above proves the guarantee (see C.1a)
 
-**Determinism beats heuristics.** If TypeScript can catch it, don't write a test for it. If a Zod schema can validate it, don't trust the caller. If a linter rule can enforce it, don't rely on code review or memory. Move every check to the cheapest, most reliable tier that can perform it.
+**Determinism beats heuristics.** If TypeScript can catch it, don't write a test for it. If a Zod schema can validate it, don't trust the caller. If a linter rule can enforce it, don't rely on code review or memory.
+
+### C.2a Compound engineering
+
+When a rule is learned (from Mark, from a bug, from a near-miss), **build the prevention into artifacts**, not memory:
+
+- Update `AGENTS.md` with the rule so every AI coding agent reads it on session start
+- Add an ESLint rule, type, or schema if the check can be deterministic
+- Add a husky/lint-staged hook if it should fire at commit time
+- Add a CI step if it should fire pre-merge
+- Add a code-review checklist line (Appendix B) if it's a judgment call
+
+The goal: the next time someone (Mark or an AI) sits down, they don't need to remember the rule — the artifact enforces it.
 
 ### C.3 Type-driven development
 

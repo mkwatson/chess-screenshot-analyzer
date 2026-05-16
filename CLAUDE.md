@@ -31,3 +31,14 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 ### Workflow skills
 
 The `superpowers:*` skills (`brainstorming`, `writing-plans`, `subagent-driven-development`, `executing-plans`) drive the plan-based workflow. Spec lives in `docs/superpowers/specs/`; plans in `docs/superpowers/plans/`.
+
+### Reinforced principles (Mark, 2026-05-16)
+
+These supplement the standing principles in `AGENTS.md` and are baked into the spec (Appendix C.1a, C.2, C.2a) and the Appendix B reviewer checklist:
+
+1. **No overengineering.** Smallest implementation that works. No speculative features, no defensive code for impossible cases, no premature abstraction.
+2. **Lean on tools / libraries / vendors.** Check official docs (Context7) before reaching for custom code.
+3. **Shift-left hierarchy** (cheapest first): types → lint → DB constraints → build-time checks → deterministic CI → preview deploys → tests we maintain.
+4. **Tests are subject to minimum-complexity.** Few, complementary, valuable. If anything earlier in the shift-left hierarchy already proves the guarantee, don't write a test that re-asserts it.
+5. **Compound engineering.** When a rule is learned, build the prevention into artifacts (AGENTS.md, lint, hooks, reviewer prompts) — don't rely on memory.
+6. **Keep going.** Don't stall on ceremony.

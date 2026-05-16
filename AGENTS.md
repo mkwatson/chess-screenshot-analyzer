@@ -67,12 +67,15 @@ Plans are written one at a time, in order.
 6. **World-class UI/UX via library selection**, not bespoke design.
 7. **Use every cheap/free vendor feature on the table** (implicit caching, telemetry, replay, etc.).
 8. **Five code qualities:** minimal, clear, maintainable, extensible at well-chosen seams, testable.
-9. **Shift-left:** TypeScript strict, Zod at boundaries, ESLint, Prettier, husky, CI. Determinism beats heuristics.
+9. **Shift-left.** For every check, pick the cheapest deterministic mechanism upstream. Hierarchy: types → lint → DB constraints → build-time checks → deterministic CI → preview deploys → tests we maintain.
 10. **Type-driven development with anti-spaghetti guardrails.** Push invariants into types; keep types themselves clear. Climb the complexity ladder slowly.
+11. **Tests are not exempt from minimum-complexity discipline.** Don't write tests for the sake of coverage. Few, complementary, valuable. If a type, lint rule, DB constraint, or preview deploy already proves something, a test that re-asserts the same guarantee is duplication — extra source to maintain, drifts from reality, adds CI latency.
+12. **Compound engineering.** When the user teaches a rule, build the prevention into artifacts (AGENTS.md, lint, hooks, reviewer prompts) so it applies automatically going forward — don't rely on memory.
+13. **Keep going.** Don't stall on ceremony. Make forward progress.
 
 ## Stack (locked in)
 
-Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini 3 via `@ai-sdk/google` through Vercel AI Gateway · AI SDK v6 `ToolLoopAgent` + assistant-ui · Stockfish 17.1 WASM (server-side, warm singleton) · chessground + chessops · Dexie v4 · vaul + sonner · `@serwist/next` · PostHog (LLM Analytics + Replay + Errors) · Upstash Redis for resumable streams only.
+Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini 3 via `@ai-sdk/google` (direct; AI Gateway deferred — see spec Section 3 / CLAUDE.md follow-ups) · AI SDK v6 `ToolLoopAgent` + assistant-ui · Stockfish 17.1 WASM (server-side, warm singleton) · chessground + chessops · Dexie v4 · vaul + sonner · `@serwist/next` · PostHog (LLM Analytics + Replay + Errors) · Upstash Redis for resumable streams only.
 
 ## Vendor account scoping
 
