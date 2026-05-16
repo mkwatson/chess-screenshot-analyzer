@@ -119,8 +119,8 @@ The project uses a **mostly-personal-with-Vidably-for-Google-and-PostHog** patte
 Per-vendor decisions:
 
 - **GitHub:** **Personal** account. Public repo (per GPL-3.0 obligations from chessground / chessops / Stockfish). `gh repo create` defaults to the authenticated personal user.
-- **Vercel:** **Personal** account, Hobby tier (free). Has every feature we need (Fluid Compute Node runtime, Deployment Protection on previews, BotID Basic, Web Analytics + Speed Insights with free quotas, function memory to 1024MB). Fully separate from Vidably work projects. Project can be transferred to a paid team later if usage outgrows Hobby.
-- **Vercel Authentication on previews:** enabled — preview URLs require a Vercel login. Production stays public.
+- **Vercel:** **Personal** account, Hobby tier (free). Has every feature we need (Fluid Compute Node runtime, BotID Basic, Web Analytics + Speed Insights with free quotas, function memory to 1024MB). Fully separate from Vidably work projects. Project can be transferred to a paid team later if usage outgrows Hobby.
+- **Vercel Authentication / Deployment Protection:** disabled. Preview and production URLs are both publicly accessible — easier for cross-device testing and sharing on demand. Preview URLs are unguessable hashes, so practical privacy is unchanged. Production URL stays unlinked and only known to the developer.
 - **Google AI Studio / GCP:** **Vidably** (work) — separate API key in a separate Google Cloud project under the Vidably account.
 - **Upstash Redis:** **Personal** free tier (10K commands/day, ~100× our need). Used only as the resumable-stream store (Section 7.4). Provisioned via the Vercel Marketplace integration on the personal Vercel account.
 - **PostHog:** **New project inside the existing Vidably PostHog organization** — path of least resistance (the developer's PostHog MCP is already authenticated to Vidably). Free within the org's existing limits; sandboxed from production Vidably analytics.
@@ -139,7 +139,7 @@ If the product ever pivots to a closed-source commercial release, the chess libr
 - **BotID Basic** — wraps `/api/chat` to block automated abuse
 - **Web Analytics + Speed Insights** — free Hobby allotment, auto-pauses at cap
 - **Upstash Redis (via Vercel Marketplace)** — exclusively as the resumable-streams store (10-minute TTL keys). Not used as a general cache. Free tier sufficient.
-- **Deployment Protection (Vercel Authentication)** on preview deployments — keeps preview URLs private during phone testing; production stays open
+- **Deployment Protection:** disabled (public previews and production) — prioritizes easy cross-device testing over preview-URL privacy
 - **Preview URLs + QR test loop** — every push gets a URL, dashboard renders QR for phone-install
 - **`vercel.ts`** config, `vercel env pull` workflow
 
