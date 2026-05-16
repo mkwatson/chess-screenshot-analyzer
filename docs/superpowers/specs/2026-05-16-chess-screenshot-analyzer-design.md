@@ -114,15 +114,18 @@ All deferred features should remain *additive* in the architecture — adding an
 
 ### 3.1 Vendor account provisioning
 
-All vendor accounts are provisioned as siblings under the existing Vidably organization/team where applicable, with fresh credentials per service and zero shared state with production Vidably resources. Concretely:
+The project uses a **mostly-personal-with-Vidably-for-Google-and-PostHog** pattern. Rationale: Vercel's team scope doesn't actually isolate projects from teammates (any team member has full access to all team projects), so "Vidably team for separation" is a contradiction. Personal accounts with free tiers give us true separation at zero cost.
 
-- **Vercel:** a new project under the Vidably team. Separate domain, separate env vars, separate deploy hooks.
-- **PostHog:** a new project within the Vidably organization. Separate API key, separate event stream. Dashboards stay isolated.
-- **Google AI Studio:** a separate API key in a separate Google Cloud project under the Vidably account.
-- **Upstash Redis:** a separate database provisioned via the Vercel Marketplace integration for this project.
-- **GitHub:** a separate repository.
+Per-vendor decisions:
 
-This is free, one-click in each platform's UI, and keeps the project's billing/logs/data physically isolated from Vidably's production work. No complexity tax.
+- **GitHub:** **Personal** account. Public repo (per GPL-3.0 obligations from chessground / chessops / Stockfish). `gh repo create` defaults to the authenticated personal user.
+- **Vercel:** **Personal** account, Hobby tier (free). Has every feature we need (Fluid Compute Node runtime, Deployment Protection on previews, BotID Basic, Web Analytics + Speed Insights with free quotas, function memory to 1024MB). Fully separate from Vidably work projects. Project can be transferred to a paid team later if usage outgrows Hobby.
+- **Vercel Authentication on previews:** enabled — preview URLs require a Vercel login. Production stays public.
+- **Google AI Studio / GCP:** **Vidably** (work) — separate API key in a separate Google Cloud project under the Vidably account.
+- **Upstash Redis:** **Personal** free tier (10K commands/day, ~100× our need). Used only as the resumable-stream store (Section 7.4). Provisioned via the Vercel Marketplace integration on the personal Vercel account.
+- **PostHog:** **New project inside the existing Vidably PostHog organization** — path of least resistance (the developer's PostHog MCP is already authenticated to Vidably). Free within the org's existing limits; sandboxed from production Vidably analytics.
+
+This pattern keeps personal side-project work *physically separate* from Vidably production resources where Vercel makes that possible, and *logically separate* (new project / new API key) where the simplest scoping primitive is a sub-resource.
 
 ### 3.2 License posture (chessground + chessops + Stockfish are GPL-3.0)
 

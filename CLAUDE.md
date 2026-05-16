@@ -53,4 +53,12 @@ Next.js App Router + TS + Tailwind v4 + shadcn/ui on Vercel · Gemini 3 via `@ai
 
 ## Vendor account scoping
 
-All vendors (Vercel, PostHog, Google AI, Upstash, GitHub) provisioned as sibling projects under the Vidably org/team, with fresh credentials isolated from Vidably production resources. See spec Section 3.1.
+Mostly-personal pattern (true separation), with Google AI and PostHog on Vidably for path-of-least-resistance:
+
+- **GitHub:** Personal (public repo per GPL).
+- **Vercel:** Personal Hobby tier (free, has every feature we need).
+- **Upstash Redis:** Personal free tier (resumable-stream store only).
+- **Google AI / GCP:** Vidably (separate project + API key).
+- **PostHog:** New project inside the existing Vidably PostHog org.
+
+See spec Section 3.1 for the full rationale.

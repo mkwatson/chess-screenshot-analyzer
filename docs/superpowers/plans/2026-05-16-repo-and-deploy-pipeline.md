@@ -912,7 +912,7 @@ vercel login
 
 Expected: browser-based login; CLI confirms authentication.
 
-- [ ] **Step 3: Link to a new Vercel project under the Vidably team**
+- [ ] **Step 3: Link to a new Vercel project under your personal account**
 
 ```bash
 vercel link
@@ -920,12 +920,12 @@ vercel link
 
 Interactive prompts:
 - "Set up `~/Projects/chess-screenshot-analyzer`?" → Yes
-- Scope → select the Vidably team (NOT personal account)
+- Scope → select your **personal Vercel account** (NOT the Vidably team — see spec Section 3.1 for why)
 - "Link to existing project?" → No
 - Project name → `chess-screenshot-analyzer`
 - Directory → `.`
 
-Expected: `.vercel/` directory created (gitignored by default — verify in `.gitignore`); project visible on https://vercel.com/<vidably-team>/chess-screenshot-analyzer.
+Expected: `.vercel/` directory created (gitignored by default — verify in `.gitignore`); project visible at `https://vercel.com/<your-personal-handle>/chess-screenshot-analyzer`.
 
 - [ ] **Step 4: Install `@vercel/config` and create `vercel.ts`**
 
@@ -973,7 +973,7 @@ git commit -m "chore: vercel.ts config + project linked under Vidably team"
 vercel inspect --web
 ```
 
-Or navigate manually to https://vercel.com/<vidably-team>/chess-screenshot-analyzer/settings/deployment-protection.
+Or navigate manually to `https://vercel.com/<your-personal-handle>/chess-screenshot-analyzer/settings/deployment-protection`.
 
 - [ ] **Step 2: Enable Vercel Authentication for Preview deployments**
 
@@ -1080,7 +1080,7 @@ Expected: CI workflow runs; all four jobs (typecheck, lint, format check, build)
 vercel ls
 ```
 
-Or open https://vercel.com/<vidably-team>/chess-screenshot-analyzer. Latest deployment to the `main` branch should be in `Ready` state for production.
+Or open `https://vercel.com/<your-personal-handle>/chess-screenshot-analyzer`. Latest deployment to the `main` branch should be in `Ready` state for production.
 
 - [ ] **Step 4: Get the production URL**
 
