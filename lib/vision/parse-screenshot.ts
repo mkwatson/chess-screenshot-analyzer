@@ -1,4 +1,5 @@
 import { generateObject } from "ai";
+import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import { Chess } from "chessops/chess";
 import { parseFen } from "chessops/fen";
@@ -21,9 +22,12 @@ uppercase letters for white pieces and lowercase for black. If you cannot \
 detect a chess board in the image, respond with confidence: 0 and best-guess \
 empty board. Confidence is your subjective certainty in the parse (0-1).`;
 
-// Gateway-routed model string. The AI SDK auto-resolves <provider>/<model>
-// strings via the Vercel AI Gateway when AI_GATEWAY_API_KEY is set.
-const MODEL_ID = "google/gemini-3-flash";
+// Direct Google AI Studio provider (bypassing the Vercel AI Gateway).
+// Reason: as of 2026-05-16 the Gateway is throttling free credits due to abuse
+// and paid credits require pre-purchase. Direct Google's own free tier suffices
+// for v0. We can flip back to the Gateway ("google/gemini-3-flash") string when
+// observability becomes load-bearing — see CLAUDE.md follow-ups.
+const MODEL = google("gemini-3-flash");
 
 function isLegalFen(fen: string): { ok: true } | { ok: false; reason: string } {
   const parsed = parseFen(fen);
@@ -47,7 +51,7 @@ async function callGemini(args: {
     : "Read this chess position and return the FEN.";
 
   const result = await generateObject({
-    model: MODEL_ID,
+    model: MODEL,
     system: SYSTEM_INSTRUCTION,
     schema: GeminiOutputSchema,
     messages: [
