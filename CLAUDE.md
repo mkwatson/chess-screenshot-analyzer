@@ -6,8 +6,9 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 
 ### Current execution state
 
-- **Plan 0 (rails) — SHIPPED.** Production live at `https://chess-screenshot-analyzer-n3510j4lc-mark-6951s-projects.vercel.app` (and any future deployment URLs). PWA installed on Mark's iPhone. Three-layer secret-leak protection active (gitleaks pre-commit + CI + GitHub native scanning). CI gates merges on type-check + lint + format + build + gitleaks.
-- **Next plan:** Slice 1 — Static board + engine call. Plan document not yet written; the writing-plans skill produces it from spec Section 10.
+- **Plan 0 (rails) — SHIPPED.** Production live, CI gates merges, three-layer secret-leak protection active (gitleaks pre-commit + CI + GitHub native scanning).
+- **Plan 1 (static board + engine call) — SHIPPED.** Production has a starting-position board and an Analyze button that POSTs to `/api/analyze`. Server-side `@se-oss/stockfish@1.0.1` (Stockfish 17.1 WASM) runs as a module-scope warm singleton at depth 14 and returns the best move; the board paints it as a green arrow. Vitest 4 wired with `// @vitest-environment jsdom` pragma for DOM tests.
+- **Next plan:** Slice 2 — Vision parse (paste image → FEN). Plan document not yet written.
 - **Latest commit:** see `git log -1`.
 
 ### Known follow-ups (small, deferred)
@@ -17,6 +18,8 @@ The bulk of project context lives in `AGENTS.md` (shared across all AI coding ag
 - **shadcn CLI in `dependencies`** instead of `devDependencies` (shadcn's default install does this). Minor production-bundle bloat; cleanup if it becomes annoying.
 - **`bun`'s `vercel` shim at `/Users/mark/.bun/bin/vercel` shadows the pnpm-global newer Vercel CLI** on PATH. Clean up by `rm`'ing the bun shim or reordering PATH.
 - **GitHub non-provider secret-pattern scanning** not enabled (toggle not visible on Hobby public repos; likely requires GHAS).
+- **`chessground@9.2.1` is marked deprecated on npm** ("Package no longer supported"). Lichess may have moved to a renamed package (e.g. `@lichess-org/chessground`). API works for now. Investigate before Plan 4+ when we lean on chessground more heavily.
+- **Vercel function cold start** for `/api/analyze` is slow (~30s the first time, hitting our `maxDuration: 30` boundary on the very first request after a fresh deploy). Stockfish WASM is 79 MB and traced into the function bundle; first invocation pays the WASM init cost. Warm requests are fast. Worth investigating Fluid Compute prewarming or moving init to the module scope's first await.
 
 ### Behavioral preferences
 
