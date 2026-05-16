@@ -2,6 +2,13 @@
 
 A Progressive Web App for iOS Safari: paste a chess screenshot, get coached by an AI agent that has a real chess engine. Personal project (developer: Mark Watson / Vidably), architected so any later feature is additive.
 
+## Current execution state
+
+- **Active plan:** `docs/superpowers/plans/2026-05-16-repo-and-deploy-pipeline.md` (Plan 0 — Repo & deploy pipeline)
+- **Status:** Plan 0 not yet started. Mark approved subagent-driven execution.
+- **Resume point:** Plan 0 Task 2 (Task 1 prerequisites verified OK; Node 24 LTS was installed via nvm in the prior session).
+- **Latest commit:** see `git log -1`.
+
 ## Key documents
 
 - **Design spec:** `docs/superpowers/specs/2026-05-16-chess-screenshot-analyzer-design.md` — comprehensive, authoritative source of architecture, principles, tool palette, stack, and conventions. Read this first.
