@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Build artifacts
 .turbo/
+
+# remember plugin runtime logs
+.remember/
