@@ -111,6 +111,20 @@ If the model's output is constrained (an enum, a record shape, an N×M grid, a l
 
 This generalizes: encoding rules (FEN syntax, JSON quoting, escaping) are where small models stumble. Move them server-side. Keep the model's job to "what is the answer," not "how do I format it."
 
+### Confidence signals — deferred design
+
+Plan 2 ships **without** a confidence field. Self-reported `confidence: 0..1` from the model is famously miscalibrated and we have nothing that acts on it today.
+
+When confidence becomes actionable (Plan 3+ when the agent decides whether to call `editPosition`, or Plan 6 when the user gets correction UX), the chosen design is:
+
+1. **Cross-model agreement** — run Flash Lite + Pro Preview in parallel; cells where they disagree → flag.
+2. **Rule-based plausibility** — piece counts ≤ 16/side, ≤ 8 pawns/side, exactly 1 king each, no pawns on rank 1 or 8, castling rights match king + rook home squares. Catches catastrophic vision errors with zero cost.
+3. **User confirmation via `editPosition`** as the ultimate truth.
+
+Surface to callers as `lowConfidenceSquares: Square[]` (a list, not a per-cell number).
+
+Do **not** add a self-reported model-confidence field, ever. It's noise.
+
 ### chessops is the only FEN validator
 
 We use `chessops` (`parseFen` + `Chess.fromSetup` from `chessops/chess` and `chessops/fen`) as the **single source of truth** for "is this FEN legal?" across the entire codebase:
