@@ -1,4 +1,12 @@
-import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
+import {
+  jsonSchema,
+  streamText,
+  convertToModelMessages,
+  stepCountIs,
+  tool,
+  type UIMessage,
+  type ToolSet,
+} from "ai";
 import { google } from "@ai-sdk/google";
 import { parseScreenshot } from "@/lib/vision/parse-screenshot";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -6,6 +14,29 @@ import { tools } from "@/lib/agent/tools";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+// Shape of the tools dict auto-injected by AssistantChatTransport (toToolsJSONSchema).
+// Each entry carries a raw JSON Schema 7 object as `parameters`.
+interface BodyTool {
+  readonly description?: string;
+  readonly parameters: Record<string, unknown>;
+}
+type BodyTools = Record<string, BodyTool>;
+
+// Wrap frontend tools from the request body into AI SDK tool definitions.
+// No `execute` — client-side useToolInvocations handles resolution via addToolResult.
+const wrapBodyTools = (body: BodyTools | undefined): ToolSet => {
+  if (!body) return {};
+  return Object.fromEntries(
+    Object.entries(body).map(([name, t]) => [
+      name,
+      tool({
+        ...(t.description !== undefined && { description: t.description }),
+        inputSchema: jsonSchema(t.parameters),
+      }),
+    ]),
+  );
+};
 
 // Per AGENTS.md "Gemini model policy": Flash Lite is the default for the
 // agent loop in v0. Escalation to gemini-3.1-pro-preview is reserved for
@@ -54,7 +85,8 @@ const buildFenContext = async (messages: readonly UIMessage[]): Promise<string> 
 };
 
 export async function POST(req: Request): Promise<Response> {
-  const { messages }: { messages: UIMessage[] } = (await req.json()) as { messages: UIMessage[] };
+  const { messages, tools: bodyTools }: { messages: UIMessage[]; tools?: BodyTools } =
+    (await req.json()) as { messages: UIMessage[]; tools?: BodyTools };
 
   const [fenContext, modelMessages] = await Promise.all([
     buildFenContext(messages),
@@ -66,7 +98,7 @@ export async function POST(req: Request): Promise<Response> {
     system:
       fenContext !== "" ? `${SYSTEM_PROMPT}\n\n# Current context\n${fenContext}` : SYSTEM_PROMPT,
     messages: modelMessages,
-    tools,
+    tools: { ...tools, ...wrapBodyTools(bodyTools) },
     // Bound the loop. 8 steps is generous for: parse-pre-pass already done,
     // then analyzePosition + showBoard + optional second analyzePosition for
     // a candidate-move comparison + final prose response.

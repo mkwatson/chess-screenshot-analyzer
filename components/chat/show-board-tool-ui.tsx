@@ -1,19 +1,23 @@
 "use client";
 
-import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Board, type ArrowBrush, type BoardArrow } from "@/lib/chess/board";
+import { makeAssistantTool } from "@assistant-ui/react";
+import { z } from "zod";
+import { Board, type BoardArrow } from "@/lib/chess/board";
+import { FenSchema } from "@/lib/engine/types";
 
-// Mirrors ArrowSchema in lib/agent/tools.ts. The tool def is the agent's
-// contract; this file conforms to it (not the other way around).
-interface ShowBoardArgs {
-  readonly fen: string;
-  readonly arrows?: readonly {
-    readonly from: string;
-    readonly to: string;
-    readonly color?: ArrowBrush;
-  }[];
-  readonly caption?: string;
-}
+const ArrowSchema = z.object({
+  from: z.string().regex(/^[a-h][1-8]$/, "from must be a square like e2"),
+  to: z.string().regex(/^[a-h][1-8]$/, "to must be a square like e4"),
+  color: z.enum(["green", "red", "blue", "yellow"]).optional(),
+});
+
+const ShowBoardArgsSchema = z.object({
+  fen: FenSchema,
+  arrows: z.array(ArrowSchema).max(8).optional(),
+  caption: z.string().max(120).optional(),
+});
+
+type ShowBoardArgs = z.infer<typeof ShowBoardArgsSchema>;
 
 // Adapter: agent's {from,to,color} -> chessground's {orig,dest,brush}.
 // Default brush is green (best-move convention from the system prompt).
@@ -24,11 +28,22 @@ const toBoardArrows = (arrows: ShowBoardArgs["arrows"]): readonly BoardArrow[] =
     brush: a.color ?? "green",
   }));
 
-// Render-only client tool — no execute, no result handling.
-// assistant-ui invokes this inline in the assistant message whenever the
-// agent emits a `showBoard` tool call.
-export const ShowBoardToolUI = makeAssistantToolUI<ShowBoardArgs, never>({
+// Frontend tool — defined entirely client-side. The transport
+// (AssistantChatTransport) auto-injects this tool's schema into the
+// /api/chat request body, the server merges it into Gemini's tool palette,
+// and assistant-ui's useToolInvocations auto-runs execute + addToolResult
+// when the model emits a call. That resolves the tool's message-part
+// state to "output-available", flipping the assistant message's
+// auto-status from "requires-action" to "complete" — which is the
+// precondition for both persistence (useExternalHistory) and the
+// composer staying visible.
+export const ShowBoardToolUI = makeAssistantTool<ShowBoardArgs, null>({
   toolName: "showBoard",
+  type: "frontend",
+  description:
+    "Render a chess board visually in your message. Use this whenever spatial information is in play — pointing at a square, showing the best move with an arrow, illustrating a tactic. Prefer this over describing positions in prose. Arrows: green = best move, red = blunder, blue/yellow = alternatives.",
+  parameters: ShowBoardArgsSchema,
+  execute: () => Promise.resolve(null),
   render: ({ args }) => (
     <div className="my-2 flex flex-col items-center gap-1">
       <Board fen={args.fen} arrows={toBoardArrows(args.arrows)} />

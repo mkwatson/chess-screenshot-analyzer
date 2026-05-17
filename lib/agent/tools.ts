@@ -11,18 +11,9 @@ const AnalyzePositionArgs = z.object({
   depth: z.number().int().min(8).max(22).optional(),
 });
 
-const ArrowSchema = z.object({
-  from: z.string().regex(/^[a-h][1-8]$/, "from must be a square like e2"),
-  to: z.string().regex(/^[a-h][1-8]$/, "to must be a square like e4"),
-  color: z.enum(["green", "red", "blue", "yellow"]).optional(),
-});
-
-const ShowBoardArgs = z.object({
-  fen: FenSchema,
-  arrows: z.array(ArrowSchema).max(8).optional(),
-  caption: z.string().max(120).optional(),
-});
-
+// showBoard is a frontend tool — defined in components/chat/show-board-tool-ui.tsx
+// and auto-injected into the request body by AssistantChatTransport. The server
+// merges it via wrapBodyTools in app/api/chat/route.ts.
 export const tools: ToolSet = {
   analyzePosition: tool({
     description:
@@ -34,12 +25,5 @@ export const tools: ToolSet = {
         depth: depth ?? 14,
         ...(candidateMove !== undefined && { candidateMove }),
       }),
-  }),
-  showBoard: tool({
-    description:
-      "Render a chess board visually in your message. Use this whenever spatial information is in play — pointing at a square, showing the best move with an arrow, illustrating a tactic. Prefer this over describing positions in prose. Arrows: green = best move, red = blunder, blue/yellow = alternatives.",
-    inputSchema: ShowBoardArgs,
-    // No execute — render-only client tool. assistant-ui's makeAssistantToolUI
-    // renders it via components/chat/show-board-tool-ui.tsx (Task 5).
   }),
 };
