@@ -65,23 +65,49 @@ const extractImages = (msg: UIMessage): readonly ImageAttachment[] =>
     return [{ mediaType: part.mediaType, imageBase64: b64 }];
   });
 
-// Pre-pass: for the latest user message with image attachments, call
-// parseScreenshot once and produce a system note for the agent. Returns the
-// note string (empty if no images / parse failed — agent handles gracefully).
+// Walk back through assistant messages for the most recent tool-call
+// whose input carried a FEN (analyzePosition or showBoard). That's the
+// agent's own canonical FEN from earlier in the conversation — re-anchoring
+// it in the system prompt on text-only follow-up turns stops Gemini from
+// falling back to a starting-position FEN when it next calls showBoard.
+const findRecentToolFen = (messages: readonly UIMessage[]): string | undefined => {
+  for (const msg of [...messages].reverse()) {
+    if (msg.role !== "assistant") continue;
+    for (const part of [...(msg.parts ?? [])].reverse()) {
+      if (part === null || typeof part !== "object") continue;
+      const p = part as { type?: unknown; input?: unknown };
+      if (p.type !== "tool-analyzePosition" && p.type !== "tool-showBoard") continue;
+      const input = p.input;
+      if (input === null || typeof input !== "object") continue;
+      const fen = (input as { fen?: unknown }).fen;
+      if (typeof fen === "string" && fen.length > 0) return fen;
+    }
+  }
+  return undefined;
+};
+
+// Pre-pass for system-prompt context. Two paths:
+//   1. Latest user message has an image → parseScreenshot once.
+//   2. No new image → reuse the most recent FEN from a prior tool-call.
+// Without (2), text-only follow-up turns leave the system prompt FEN-less
+// and Gemini emits a default starting-position FEN to showBoard.
 const buildFenContext = async (messages: readonly UIMessage[]): Promise<string> => {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  if (!lastUser) return "";
-  const images = extractImages(lastUser);
-  // Parse only the first image. Multi-image messages are unusual; revisit if needed.
-  const [img] = images;
-  if (!img) return "";
-  const result = await parseScreenshot({
-    imageBase64: img.imageBase64,
-    mimeType: img.mediaType,
-  });
-  if (!result.ok)
-    return `FEN-parse: failed (${result.reason}). Ask the user to clarify the position.`;
-  return `FEN: ${result.data.fen}\nSide to move: ${result.data.sideToMove}`;
+  if (lastUser) {
+    const [img] = extractImages(lastUser);
+    if (img) {
+      const result = await parseScreenshot({
+        imageBase64: img.imageBase64,
+        mimeType: img.mediaType,
+      });
+      if (!result.ok)
+        return `FEN-parse: failed (${result.reason}). Ask the user to clarify the position.`;
+      return `FEN: ${result.data.fen}\nSide to move: ${result.data.sideToMove}`;
+    }
+  }
+  const priorFen = findRecentToolFen(messages);
+  if (priorFen !== undefined) return `FEN: ${priorFen}`;
+  return "";
 };
 
 export async function POST(req: Request): Promise<Response> {
