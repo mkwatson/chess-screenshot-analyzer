@@ -53,6 +53,12 @@ function toShapes(arrows: readonly BoardArrow[] | undefined): DrawShape[] {
   );
 }
 
+// Callers MUST pass a chessops-legal FEN. Zod refinements on tool args
+// are stripped at the JSON-Schema boundary that goes to the model, so any
+// site rendering a board from model-emitted args must `parseFen` first
+// and surface its own fallback UI on failure — chessground silently
+// falls back to the starting position on invalid input, which is exactly
+// how Plan 5 hid a real bug for hours.
 export function Board({ fen, orientation = "white", viewOnly = true, arrows }: BoardProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<Api | null>(null);

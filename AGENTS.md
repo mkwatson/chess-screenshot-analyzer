@@ -146,6 +146,22 @@ We use `chessops` (`parseFen` + `Chess.fromSetup` from `chessops/chess` and `che
 
 Do **not** introduce a parallel regex, hand-rolled validator, or "lenient" pre-check. Two validators that disagree about legality is exactly the drift surface we got bitten by in Plan 2 (a Gemini-output FEN passed chessops in parseScreenshot but failed our regex in `/api/analyze`).
 
+**Corollary — re-validate FENs that originate from the model.** Zod `.refine()` is stripped when a tool's `parameters` are converted to JSON Schema for the model (this is how `frontendTools` / `toToolsJSONSchema` work). So a `showBoard` call may arrive at the client with a structurally-valid but chess-illegal FEN. Re-parse via chessops at the render boundary; show an explicit "couldn't render" placeholder instead of letting chessground silently fall back to the starting position. Plan 5 cost us hours of debugging because we relied on this silent fallback.
+
+### Frontend tools must resolve their tool-call
+
+assistant-ui's auto-status sets every assistant message with an unresolved tool-call to `{ type: "requires-action", reason: "tool-calls" }`. The persistence path (`useExternalHistory.isReady`) rejects everything except `complete | incomplete | undefined` — so an unresolved tool-call **blocks the entire assistant message from being persisted** and hides the composer (runtime thinks the turn is waiting on a tool result).
+
+If a tool's purpose is to render UI on the client, define it as a **frontend tool** via `makeAssistantTool({ type: "frontend", parameters, execute, render })`. The `execute` can be a no-op (`async () => null`) — its purpose is to give `useToolInvocations` something to call so it fires `addToolResult` and flips the message to `complete`. `AssistantChatTransport` auto-injects the schema into the request body via `toToolsJSONSchema(modelContext.tools)`; the server merges it into `streamText({ tools })` via AI SDK's `jsonSchema()` helper.
+
+**Do not** define a render-only tool server-side with no `execute` and rely on `makeAssistantToolUI` alone. That pattern looks like it should work and silently breaks persistence — Plan 5's most expensive bug.
+
+### `/api/chat`'s system-prompt FEN context must walk message history
+
+`buildFenContext` originally inspected only the latest user message for an image. On any text-only follow-up turn the system prompt lost its `FEN:` line, and Gemini emitted a starting-position fallback to `showBoard` while still analysing the actual position correctly via `analyzePosition`. The agent even apologised in prose ("I cannot render the board at this moment") because it knew it didn't have the FEN.
+
+The rule: when there is no new image on the latest user message, walk back through assistant messages and reuse the most recent tool-call's `input.fen` (`analyzePosition` or `showBoard`). That's the agent's own canonical FEN; no re-parsing required. Re-anchoring it in the system prompt keeps Gemini's `showBoard` calls aligned across turns.
+
 ## Vendor account scoping
 
 Mostly-personal pattern (true separation), with Google AI and PostHog on Vidably for path-of-least-resistance:

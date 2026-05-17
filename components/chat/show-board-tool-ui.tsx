@@ -1,6 +1,7 @@
 "use client";
 
 import { makeAssistantTool } from "@assistant-ui/react";
+import { parseFen } from "chessops/fen";
 import { z } from "zod";
 import { Board, type BoardArrow } from "@/lib/chess/board";
 import { FenSchema } from "@/lib/engine/types";
@@ -44,12 +45,28 @@ export const ShowBoardToolUI = makeAssistantTool<ShowBoardArgs, null>({
     "Render a chess board visually in your message. Use this whenever spatial information is in play — pointing at a square, showing the best move with an arrow, illustrating a tactic. Prefer this over describing positions in prose. Arrows: green = best move, red = blunder, blue/yellow = alternatives.",
   parameters: ShowBoardArgsSchema,
   execute: () => Promise.resolve(null),
-  render: ({ args }) => (
-    <div className="my-2 flex flex-col items-center gap-1">
-      <Board fen={args.fen} arrows={toBoardArrows(args.arrows)} />
-      {args.caption !== undefined && args.caption !== "" ? (
-        <p className="text-muted-foreground text-xs">{args.caption}</p>
-      ) : null}
-    </div>
-  ),
+  // Re-validate `args.fen` here: Zod refinements (chessops legality) get
+  // stripped when tool parameters are JSON-Schema'd for the model, so the
+  // model can emit a structurally-valid but chess-illegal FEN. Without this
+  // guard chessground silently falls back to the starting position — the
+  // exact failure mode that hid a real bug in Plan 5 for hours.
+  // Render returns a fallback (which unmounts the Board entirely) until the
+  // FEN parses, so a partial streamed FEN cleanly resolves on the next render.
+  render: ({ args }) => {
+    if (!parseFen(args.fen).isOk) {
+      return (
+        <div className="bg-muted text-muted-foreground my-2 flex aspect-square w-full max-w-[min(85vw,420px)] items-center justify-center rounded-md p-4 text-center text-sm">
+          Couldn&rsquo;t render board — the model returned an invalid position.
+        </div>
+      );
+    }
+    return (
+      <div className="my-2 flex flex-col items-center gap-1">
+        <Board fen={args.fen} arrows={toBoardArrows(args.arrows)} />
+        {args.caption !== undefined && args.caption !== "" ? (
+          <p className="text-muted-foreground text-xs">{args.caption}</p>
+        ) : null}
+      </div>
+    );
+  },
 });
