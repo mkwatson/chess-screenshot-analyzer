@@ -4,63 +4,57 @@ import {
   AssistantRuntimeProvider,
   SimpleImageAttachmentAdapter,
   useRemoteThreadListRuntime,
-  type RemoteThreadListAdapter,
 } from "@assistant-ui/react";
 import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
+import { useEffect, useState } from "react";
 import { Thread } from "@/components/assistant-ui/thread";
-import { historyAdapter } from "@/lib/persistence/history-adapter";
-import { DEFAULT_CHAT_ID } from "@/lib/persistence/db";
+import { db } from "@/lib/persistence/db";
+import { dexieThreadListAdapter } from "@/lib/persistence/thread-list-adapter";
+import { ChatListDrawer } from "./chat-list-drawer";
 import { ShowBoardToolUI } from "./show-board-tool-ui";
 
-// `useRemoteThreadListRuntime` is the canonical persistence entry point —
-// even for single-chat. assistant-ui's history load is gated on a
-// thread-list `remoteId` (see @assistant-ui/react-ai-sdk's useExternalHistory:
-// the load effect short-circuits when `threadListItem.remoteId` is falsy).
-// So we need the thread-list adapter's `list()` to surface our default chat
-// with a non-null remoteId on every mount — otherwise the runtime treats it
-// as a fresh local thread and load never fires.
-//
-// InMemoryThreadListAdapter would also work *after* the user sends their
-// first message of a session (initialize() assigns a remoteId then), but
-// page refresh resets the in-memory list to empty. A static list of one
-// item with `remoteId: DEFAULT_CHAT_ID` fixes that.
-//
-// Plan 5 will replace this with a Dexie-backed adapter that lists multiple
-// chats (and tracks their remoteIds / titles).
-const singleChatAdapter: RemoteThreadListAdapter = {
-  list: () =>
-    Promise.resolve({
-      threads: [{ status: "regular", remoteId: DEFAULT_CHAT_ID, title: "Coach" }],
-    }),
-  initialize: (threadId) => Promise.resolve({ remoteId: threadId, externalId: undefined }),
-  rename: () => Promise.resolve(),
-  archive: () => Promise.resolve(),
-  unarchive: () => Promise.resolve(),
-  delete: () => Promise.resolve(),
-  generateTitle: () => Promise.resolve(new ReadableStream()),
-  fetch: (id) => Promise.resolve({ status: "regular", remoteId: id, title: "Coach" }),
-};
-// Named to satisfy react-hooks/rules-of-hooks — assistant-ui calls this
-// as a hook for each thread it activates.
+// History adapter is no longer passed here — the thread-list adapter's
+// unstable_Provider injects a per-thread one via RuntimeAdapterProvider.
 const useChessRuntime = () =>
   useChatRuntime({
-    adapters: {
-      attachments: new SimpleImageAttachmentAdapter(),
-      history: historyAdapter,
-    },
+    adapters: { attachments: new SimpleImageAttachmentAdapter() },
   });
 
 export const ChatSurface = (): React.JSX.Element => {
+  // Active thread. Starts undefined while we look up the most recent
+  // chat from Dexie; if there is none, stays undefined and the user's
+  // first message triggers `initialize()` which creates the row.
+  const [threadId, setThreadId] = useState<string | undefined>(undefined);
+  const [bootstrapped, setBootstrapped] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const row = await db.chats.orderBy("updatedAt").reverse().first();
+      if (cancelled) return;
+      if (row !== undefined) setThreadId(row.id);
+      setBootstrapped(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const runtime = useRemoteThreadListRuntime({
-    adapter: singleChatAdapter,
-    threadId: DEFAULT_CHAT_ID,
+    adapter: dexieThreadListAdapter,
+    threadId,
     runtimeHook: useChessRuntime,
   });
+
+  // Avoid a flash of empty thread while we look up the most-recent chat.
+  // One Dexie read; typically <50ms.
+  if (!bootstrapped) return <main className="min-h-dvh" />;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ShowBoardToolUI />
       <main className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
+        <ChatListDrawer currentThreadId={threadId} onSelect={setThreadId} />
         <Thread />
       </main>
     </AssistantRuntimeProvider>

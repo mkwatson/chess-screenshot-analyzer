@@ -51,7 +51,3 @@ class CoachDb extends Dexie {
 }
 
 export const db = new CoachDb();
-
-// Kept temporarily so existing imports (Plan 4 history-adapter +
-// chat-surface) continue to compile. Task 5 of Plan 5 removes this.
-export const DEFAULT_CHAT_ID = "@default";
