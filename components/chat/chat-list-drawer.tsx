@@ -33,8 +33,9 @@ export const ChatListDrawer = ({
   currentThreadId,
   onSelect,
 }: ChatListDrawerProps): React.JSX.Element => {
-  // useLiveQuery initial value [] avoids a chats === undefined branch.
-  const chats = useLiveQuery(() => db.chats.orderBy("updatedAt").reverse().toArray(), [], []) ?? [];
+  // useLiveQuery's third arg is the default while the query resolves —
+  // narrows `chats` to `ChatRow[]` without a runtime fallback.
+  const chats = useLiveQuery(() => db.chats.orderBy("updatedAt").reverse().toArray(), [], []);
 
   const newChat = async (): Promise<void> => {
     const id = nanoid();

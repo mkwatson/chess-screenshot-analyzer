@@ -15,10 +15,8 @@ import { ShowBoardToolUI } from "./show-board-tool-ui";
 
 // History adapter is no longer passed here — the thread-list adapter's
 // unstable_Provider injects a per-thread one via RuntimeAdapterProvider.
-const useChessRuntime = () =>
-  useChatRuntime({
-    adapters: { attachments: new SimpleImageAttachmentAdapter() },
-  });
+const attachmentAdapter = new SimpleImageAttachmentAdapter();
+const useChessRuntime = () => useChatRuntime({ adapters: { attachments: attachmentAdapter } });
 
 export const ChatSurface = (): React.JSX.Element => {
   // Active thread. Starts undefined while we look up the most recent
