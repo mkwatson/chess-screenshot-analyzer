@@ -249,6 +249,10 @@ const AssistantMessage: FC = () => {
             if (part.type === "reasoning") return ["group-chainOfThought", "group-reasoning"];
             if (part.type === "tool-call") {
               if (getMcpAppFromToolPart(part)) return null;
+              // showBoard is render-only client UI — its output IS visible message
+              // content (a rendered board), not behind-the-scenes reasoning.
+              // Engine-call tools (analyzePosition) stay collapsed in the CoT group.
+              if (part.toolName === "showBoard") return null;
               return ["group-chainOfThought", "group-tool"];
             }
             return null;
