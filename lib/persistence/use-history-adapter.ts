@@ -10,6 +10,24 @@ import type {
 } from "@assistant-ui/react";
 import { db, type MessageRow } from "./db";
 
+// Find the first non-empty text part of an assistant-ui UIMessage-like
+// object. Returns undefined if there is none (image-only messages, etc.).
+// Duck-typed because TMessage is generic at this layer.
+const extractFirstTextPart = (msg: unknown): string | undefined => {
+  if (msg === null || typeof msg !== "object") return undefined;
+  const parts = (msg as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return undefined;
+  for (const p of parts) {
+    if (p !== null && typeof p === "object") {
+      const part = p as { type?: unknown; text?: unknown };
+      if (part.type === "text" && typeof part.text === "string" && part.text.length > 0) {
+        return part.text;
+      }
+    }
+  }
+  return undefined;
+};
+
 // Canonical pattern lifted from `useAssistantCloudThreadHistoryAdapter`:
 // the adapter reads the active thread's remoteId on every load/append
 // via `aui.threadListItem().getState().remoteId`. That makes one adapter
@@ -70,6 +88,23 @@ class DexieThreadHistoryAdapter implements ThreadHistoryAdapter {
       };
       await db.transaction("rw", db.messages, db.chats, async () => {
         await db.messages.put(row);
+
+        // Auto-title from the first user message's text part, but only
+        // while the chat is still "New chat" (a user rename later wins).
+        const isUserMessage = (item.message as { role?: unknown }).role === "user";
+        if (isUserMessage) {
+          const chat = await db.chats.get(chatId);
+          if (chat?.title === "New chat") {
+            const text = extractFirstTextPart(item.message);
+            if (text !== undefined) {
+              const title = text.slice(0, 60).trim();
+              if (title.length > 0) {
+                await db.chats.update(chatId, { title, updatedAt: row.createdAt });
+                return;
+              }
+            }
+          }
+        }
         await db.chats.update(chatId, { updatedAt: row.createdAt });
       });
     },
