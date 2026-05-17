@@ -3,6 +3,7 @@
 import { AssistantRuntimeProvider, SimpleImageAttachmentAdapter } from "@assistant-ui/react";
 import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import { Thread } from "@/components/assistant-ui/thread";
+import { historyAdapter } from "@/lib/persistence/history-adapter";
 import { ShowBoardToolUI } from "./show-board-tool-ui";
 
 // The chat surface is the single user-facing entry point. It composes
@@ -16,6 +17,7 @@ export const ChatSurface = (): React.JSX.Element => {
   const runtime = useChatRuntime({
     adapters: {
       attachments: new SimpleImageAttachmentAdapter(),
+      history: historyAdapter,
     },
   });
 
