@@ -2,17 +2,19 @@ import Dexie, { type Table } from "dexie";
 
 // Plan 4 stores one message per row. `chatId` is hardcoded to "@default"
 // (single-chat); Plan 5 will introduce the chats table + chatId per row.
-// `parentId` and `format` come from assistant-ui's history adapter format
-// helper (see lib/persistence/history-adapter.ts).
+//
+// Field names `parent_id`, `format`, `content` (snake_case for parent_id)
+// mirror assistant-ui's `MessageStorageEntry<TPayload>` exactly so a row
+// can be handed straight to `fmt.decode` without a wrapper. `chatId` and
+// `createdAt` are our own index columns.
 export interface MessageRow {
   readonly id: string;
   readonly chatId: string;
-  readonly parentId: string | null;
+  readonly parent_id: string | null;
   readonly format: string;
   // Opaque JSON payload — encoded by assistant-ui's format helper. We never
-  // inspect it server-side or in app code; it round-trips through the
-  // adapter's encode/decode pair.
-  readonly content: unknown;
+  // inspect it; it round-trips through the adapter's encode/decode pair.
+  readonly content: Record<string, unknown>;
   readonly createdAt: number;
 }
 
