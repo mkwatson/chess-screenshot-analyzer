@@ -23,6 +23,18 @@ export function EditableBoard({ fen, turn, onChange }: EditableBoardProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<Api | null>(null);
 
+  // Mount-once useEffect captures props lexically — but `turn` and `onChange`
+  // can change as the user toggles side-to-move. Keep refs in sync so the
+  // chessground `events.change` callback always reads the latest values.
+  // (Caught in review; without this the callback emits FENs with the stale
+  // side-to-move after a toggle.)
+  const turnRef = useRef(turn);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    turnRef.current = turn;
+    onChangeRef.current = onChange;
+  });
+
   // Caller is responsible for passing a chessops-legal FEN
   // (see lib/chess/board.tsx comment for context). If the model emits
   // an illegal one we'd have rejected it upstream in edit-position-tool-ui.
@@ -39,17 +51,16 @@ export function EditableBoard({ fen, turn, onChange }: EditableBoardProps) {
           const api = apiRef.current;
           if (!api) return;
           // chessground's getFen() returns the position fragment only —
-          // no side-to-move/castling/en-passant/halfmove/fullmove. We
-          // append a minimal-but-valid tail; chessops re-validates downstream.
+          // no side-to-move/castling/en-passant/halfmove/fullmove. Append
+          // a minimal tail using the LATEST `turn` (via ref, see above).
+          // Castling rights `-` because we can't infer them from a position
+          // alone; chessops accepts `-` cleanly.
           const positionOnly = api.getFen();
-          // Combine into a full FEN with sensible defaults. Castling rights
-          // `KQkq` are common (chessops will reject if e.g. king has moved
-          // off home square, but we accept the false-negative here for v0).
-          const combined = `${positionOnly} ${turn === "white" ? "w" : "b"} - - 0 1`;
+          const combined = `${positionOnly} ${turnRef.current === "white" ? "w" : "b"} - - 0 1`;
           // Only emit when chessops accepts — otherwise the FEN is mid-edit
           // (e.g. user dragged a piece into limbo for a frame). Caller
           // disables Confirm based on parseability.
-          if (parseFen(combined).isOk) onChange(combined);
+          if (parseFen(combined).isOk) onChangeRef.current(combined);
         },
       },
     };

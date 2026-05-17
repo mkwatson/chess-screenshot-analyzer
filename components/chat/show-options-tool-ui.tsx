@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { makeAssistantTool } from "@assistant-ui/react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -24,42 +25,60 @@ export const ShowOptionsToolUI = makeAssistantTool<ShowOptionsArgs, ShowOptionsR
   description:
     "Ask the user to pick from 2–6 short options. The user taps a chip and you receive their choice. Use when a one-question disambiguation can save a round-trip of typing — e.g. 'are you playing White or Black?', 'which line do you want to explore?'. Do NOT use for open-ended questions.",
   parameters: ShowOptionsArgsSchema,
-  render: ({ args, addResult, result }) => {
-    // History replay path: tool already resolved. Show what was chosen
-    // so the conversation reads coherently on reload.
-    if (result !== undefined) {
-      return (
-        <div className="my-2 flex flex-wrap items-center gap-2">
-          {args.prompt !== undefined && args.prompt !== "" ? (
-            <p className="text-muted-foreground text-sm">{args.prompt}</p>
-          ) : null}
-          <span className="bg-muted rounded-full px-3 py-1 text-sm">
-            You chose: <b>{result.choice}</b>
-          </span>
-        </div>
-      );
-    }
-    // Active path: render chips.
+  render: (props) => <ShowOptionsChips {...props} />,
+});
+
+// Extracted so hooks work cleanly (the render slot wraps this into a
+// ComponentType). Local `chosen` state disables the chips synchronously
+// on first tap so a fast double-tap can't fire addResult twice before
+// the `result` prop propagates back from the runtime.
+function ShowOptionsChips({
+  args,
+  addResult,
+  result,
+}: {
+  readonly args: ShowOptionsArgs;
+  readonly addResult: (r: ShowOptionsResult) => void;
+  readonly result?: ShowOptionsResult | undefined;
+}) {
+  const [chosen, setChosen] = useState(false);
+
+  // History replay path: tool already resolved. Show what was chosen
+  // so the conversation reads coherently on reload.
+  if (result !== undefined) {
     return (
-      <div className="my-2 flex flex-col gap-2">
+      <div className="my-2 flex flex-wrap items-center gap-2">
         {args.prompt !== undefined && args.prompt !== "" ? (
-          <p className="text-sm">{args.prompt}</p>
+          <p className="text-muted-foreground text-sm">{args.prompt}</p>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          {args.options.map((opt) => (
-            <Button
-              key={opt}
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                addResult({ choice: opt });
-              }}
-            >
-              {opt}
-            </Button>
-          ))}
-        </div>
+        <span className="bg-muted rounded-full px-3 py-1 text-sm">
+          You chose: <b>{result.choice}</b>
+        </span>
       </div>
     );
-  },
-});
+  }
+
+  return (
+    <div className="my-2 flex flex-col gap-2">
+      {args.prompt !== undefined && args.prompt !== "" ? (
+        <p className="text-sm">{args.prompt}</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {args.options.map((opt) => (
+          <Button
+            key={opt}
+            variant="outline"
+            size="sm"
+            disabled={chosen}
+            onClick={() => {
+              setChosen(true);
+              addResult({ choice: opt });
+            }}
+          >
+            {opt}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
