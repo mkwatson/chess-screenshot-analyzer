@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import withSerwistInit from "@serwist/next";
 
 const nextConfig: NextConfig = {
   // @se-oss/stockfish spawns a child Node process that loads a .wasm sibling
@@ -15,4 +16,10 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV !== "production",
+});
+
+export default withSerwist(nextConfig);

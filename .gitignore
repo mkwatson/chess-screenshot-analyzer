@@ -50,5 +50,11 @@ next-env.d.ts
 # Build artifacts
 .turbo/
 
+# Serwist / service worker build output
+/public/sw.js
+/public/sw.js.map
+/public/swe-worker-*.js
+/public/swe-worker-*.js.map
+
 # remember plugin runtime logs
 .remember/
