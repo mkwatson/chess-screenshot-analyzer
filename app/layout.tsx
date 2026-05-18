@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { DevConsole } from "@/components/dev-console";
+import { ViewportDebug } from "@/components/dev/viewport-debug";
 
 export const metadata: Metadata = {
   title: "Chess Screenshot Analyzer",
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="bg-background text-foreground antialiased">
         <DevConsole />
+        <ViewportDebug />
         {children}
       </body>
     </html>
