@@ -63,7 +63,7 @@ export const Thread: FC = () => {
       <ThreadPrimitive.Viewport
         turnAnchor="top"
         data-slot="aui_thread-viewport"
-        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-auto overscroll-contain scroll-smooth"
       >
         <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
           <AuiIf condition={(s) => s.thread.isEmpty}>
@@ -73,13 +73,12 @@ export const Thread: FC = () => {
           <div data-slot="aui_message-group" className="mb-10 flex flex-col gap-y-8 empty:hidden">
             <ThreadPrimitive.Messages>{() => <ThreadMessage />}</ThreadPrimitive.Messages>
           </div>
-
-          <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer bg-background/85 supports-[backdrop-filter]:bg-background/70 sticky bottom-0 mt-auto flex flex-col gap-2 overflow-visible rounded-t-(--composer-radius) pb-1 backdrop-blur md:pb-2">
-            <ThreadScrollToBottom />
-            <Composer />
-          </ThreadPrimitive.ViewportFooter>
         </div>
       </ThreadPrimitive.Viewport>
+      <div className="bg-background/85 supports-[backdrop-filter]:bg-background/70 relative mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-2 overflow-visible rounded-t-(--composer-radius) px-4 pb-1 backdrop-blur md:pb-2">
+        <ThreadScrollToBottom />
+        <Composer />
+      </div>
     </ThreadPrimitive.Root>
   );
 };
