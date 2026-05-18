@@ -267,6 +267,7 @@ const AssistantMessage: FC = () => {
               if (part.toolName === "showBoard") return null;
               if (part.toolName === "showOptions") return null;
               if (part.toolName === "editPosition") return null;
+              if (part.toolName === "askOnBoard") return null;
               if (part.toolName === "analyzePosition") return null;
               return ["group-chainOfThought", "group-tool"];
             }

@@ -11,6 +11,7 @@ import { Thread } from "@/components/assistant-ui/thread";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { db } from "@/lib/persistence/db";
 import { dexieThreadListAdapter } from "@/lib/persistence/thread-list-adapter";
+import { AskOnBoardToolUI } from "./ask-on-board-tool-ui";
 import { BoardStage } from "./board-stage";
 import { ChatListDrawer } from "./chat-list-drawer";
 import { EditPositionToolUI } from "./edit-position-tool-ui";
@@ -76,6 +77,7 @@ export const ChatSurface = (): React.JSX.Element => {
       <ShowBoardToolUI />
       <ShowOptionsToolUI />
       <EditPositionToolUI />
+      <AskOnBoardToolUI />
       <div className="flex h-lvh w-full flex-col pt-[env(safe-area-inset-top)]">
         <ChatListDrawer currentThreadId={threadId} onSelect={setThreadId} />
         <BoardStage expanded={boardExpanded} onExpandedChange={setBoardExpanded} />
