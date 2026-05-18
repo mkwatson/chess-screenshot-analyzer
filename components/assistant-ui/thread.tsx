@@ -32,6 +32,8 @@ import {
   SuggestionPrimitive,
   ThreadPrimitive,
   useAuiState,
+  type MessagePartStatus,
+  type ToolCallMessagePartStatus,
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
@@ -72,7 +74,7 @@ export const Thread: FC = () => {
             <ThreadPrimitive.Messages>{() => <ThreadMessage />}</ThreadPrimitive.Messages>
           </div>
 
-          <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer bg-background sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) pb-4 md:pb-6">
+          <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer bg-background/85 supports-[backdrop-filter]:bg-background/70 sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) pb-4 backdrop-blur md:pb-6">
             <ThreadScrollToBottom />
             <Composer />
           </ThreadPrimitive.ViewportFooter>
@@ -159,7 +161,7 @@ const Composer: FC = () => {
         render={
           <div
             data-slot="aui_composer-shell"
-            className="bg-background focus-within:border-ring/75 focus-within:ring-ring/20 data-[dragging=true]:border-ring data-[dragging=true]:bg-accent/50 flex w-full flex-col gap-2 rounded-(--composer-radius) border p-(--composer-padding) transition-shadow focus-within:ring-2 data-[dragging=true]:border-dashed"
+            className="bg-background/85 supports-[backdrop-filter]:bg-background/70 focus-within:border-ring/75 focus-within:ring-ring/20 data-[dragging=true]:border-ring data-[dragging=true]:bg-accent/50 flex w-full flex-col gap-2 rounded-(--composer-radius) border p-(--composer-padding) backdrop-blur transition-shadow focus-within:ring-2 data-[dragging=true]:border-dashed"
           />
         }
       >
@@ -227,6 +229,18 @@ const MessageError: FC = () => {
   );
 };
 
+const AnalyzingIndicator: FC<{
+  readonly status?: MessagePartStatus | ToolCallMessagePartStatus;
+}> = ({ status }) => {
+  if (status?.type !== "running") return null;
+  return (
+    <p className="text-muted-foreground my-2 flex items-center gap-1 text-xs">
+      <span className="bg-muted-foreground/60 inline-block size-1.5 animate-pulse rounded-full" />
+      Analyzing position…
+    </p>
+  );
+};
+
 const AssistantMessage: FC = () => {
   // reserves space for action bar and compensates with `-mb` for consistent msg spacing
   // keeps hovered action bar from shifting layout (autohide doesn't support absolute positioning well)
@@ -242,7 +256,7 @@ const AssistantMessage: FC = () => {
     >
       <div
         data-slot="aui_assistant-message-content"
-        className="text-foreground px-2 leading-relaxed wrap-break-word"
+        className="text-foreground px-2 leading-7 wrap-break-word"
       >
         <MessagePrimitive.GroupedParts
           groupBy={(part) => {
@@ -251,10 +265,11 @@ const AssistantMessage: FC = () => {
               if (getMcpAppFromToolPart(part)) return null;
               // showBoard, showOptions, and editPosition are render-only client UI —
               // their output IS visible message content, not behind-the-scenes reasoning.
-              // Engine-call tools (analyzePosition) stay collapsed in the CoT group.
+              // analyzePosition is rendered inline as a subtle pulse indicator.
               if (part.toolName === "showBoard") return null;
               if (part.toolName === "showOptions") return null;
               if (part.toolName === "editPosition") return null;
+              if (part.toolName === "analyzePosition") return null;
               return ["group-chainOfThought", "group-tool"];
             }
             return null;
@@ -290,6 +305,9 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
+                if (part.toolName === "analyzePosition") {
+                  return <AnalyzingIndicator status={part.status} />;
+                }
                 return part.toolUI ?? <ToolFallback {...part} />;
               default:
                 return null;
@@ -363,7 +381,7 @@ const UserMessage: FC = () => {
       <UserMessageAttachments />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-        <div className="aui-user-message-content peer bg-muted text-foreground rounded-2xl px-4 py-2.5 wrap-break-word empty:hidden">
+        <div className="aui-user-message-content peer bg-muted/60 text-foreground rounded-2xl px-3 py-2 text-sm wrap-break-word empty:hidden">
           <MessagePrimitive.Parts />
         </div>
         <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
