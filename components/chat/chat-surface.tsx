@@ -11,6 +11,7 @@ import { Thread } from "@/components/assistant-ui/thread";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { db } from "@/lib/persistence/db";
 import { dexieThreadListAdapter } from "@/lib/persistence/thread-list-adapter";
+import { BoardStage } from "./board-stage";
 import { ChatListDrawer } from "./chat-list-drawer";
 import { EditPositionToolUI } from "./edit-position-tool-ui";
 import { ShowBoardToolUI } from "./show-board-tool-ui";
@@ -31,6 +32,7 @@ export const ChatSurface = (): React.JSX.Element => {
   // first message triggers `initialize()` which creates the row.
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const [bootstrapped, setBootstrapped] = useState(false);
+  const [boardExpanded, setBoardExpanded] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +45,20 @@ export const ChatSurface = (): React.JSX.Element => {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Auto-collapse the board when the composer receives focus so the user
+  // has more vertical space for typing. The aria-label on ComposerPrimitive.Input
+  // is "Message input" (see thread.tsx), giving us a stable selector.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.getAttribute("aria-label") === "Message input") {
+        setBoardExpanded(false);
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
   }, []);
 
   const runtime = useRemoteThreadListRuntime({
@@ -60,10 +76,13 @@ export const ChatSurface = (): React.JSX.Element => {
       <ShowBoardToolUI />
       <ShowOptionsToolUI />
       <EditPositionToolUI />
-      <main className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
+      <div className="flex h-dvh flex-col">
         <ChatListDrawer currentThreadId={threadId} onSelect={setThreadId} />
-        <Thread />
-      </main>
+        <BoardStage expanded={boardExpanded} onExpandedChange={setBoardExpanded} />
+        <main className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]">
+          <Thread />
+        </main>
+      </div>
     </AssistantRuntimeProvider>
   );
 };

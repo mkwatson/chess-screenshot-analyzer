@@ -1,9 +1,7 @@
 "use client";
 
 import { makeAssistantTool } from "@assistant-ui/react";
-import { parseFen } from "chessops/fen";
 import { z } from "zod";
-import { Board, type BoardArrow } from "@/lib/chess/board";
 import { FenSchema } from "@/lib/engine/types";
 
 const ArrowSchema = z.object({
@@ -18,17 +16,6 @@ const ShowBoardArgsSchema = z.object({
   caption: z.string().max(120).optional(),
 });
 
-type ShowBoardArgs = z.infer<typeof ShowBoardArgsSchema>;
-
-// Adapter: agent's {from,to,color} -> chessground's {orig,dest,brush}.
-// Default brush is green (best-move convention from the system prompt).
-const toBoardArrows = (arrows: ShowBoardArgs["arrows"]): readonly BoardArrow[] =>
-  (arrows ?? []).map((a) => ({
-    orig: a.from,
-    dest: a.to,
-    brush: a.color ?? "green",
-  }));
-
 // Frontend tool — defined entirely client-side. The transport
 // (AssistantChatTransport) auto-injects this tool's schema into the
 // /api/chat request body, the server merges it into Gemini's tool palette,
@@ -38,35 +25,16 @@ const toBoardArrows = (arrows: ShowBoardArgs["arrows"]): readonly BoardArrow[] =
 // auto-status from "requires-action" to "complete" — which is the
 // precondition for both persistence (useExternalHistory) and the
 // composer staying visible.
-export const ShowBoardToolUI = makeAssistantTool<ShowBoardArgs, null>({
+//
+// render returns null: BoardStage (pinned at the top of the viewport) owns
+// the visual display now. This avoids double-rendering the board inline in
+// the chat message AND in the sticky header.
+export const ShowBoardToolUI = makeAssistantTool({
   toolName: "showBoard",
   type: "frontend",
   description:
     "Render a chess board visually in your message. Use this whenever spatial information is in play — pointing at a square, showing the best move with an arrow, illustrating a tactic. Prefer this over describing positions in prose. Arrows: green = best move, red = blunder, blue/yellow = alternatives.",
   parameters: ShowBoardArgsSchema,
   execute: () => Promise.resolve(null),
-  // Re-validate `args.fen` here: Zod refinements (chessops legality) get
-  // stripped when tool parameters are JSON-Schema'd for the model, so the
-  // model can emit a structurally-valid but chess-illegal FEN. Without this
-  // guard chessground silently falls back to the starting position — the
-  // exact failure mode that hid a real bug in Plan 5 for hours.
-  // Render returns a fallback (which unmounts the Board entirely) until the
-  // FEN parses, so a partial streamed FEN cleanly resolves on the next render.
-  render: ({ args }) => {
-    if (!parseFen(args.fen).isOk) {
-      return (
-        <div className="bg-muted text-muted-foreground my-2 flex aspect-square w-full max-w-[min(85vw,420px)] items-center justify-center rounded-md p-4 text-center text-sm">
-          Couldn&rsquo;t render board — the model returned an invalid position.
-        </div>
-      );
-    }
-    return (
-      <div className="my-2 flex flex-col items-center gap-1">
-        <Board fen={args.fen} arrows={toBoardArrows(args.arrows)} />
-        {args.caption !== undefined && args.caption !== "" ? (
-          <p className="text-muted-foreground text-xs">{args.caption}</p>
-        ) : null}
-      </div>
-    );
-  },
+  render: () => null,
 });
