@@ -122,6 +122,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Lock document scroll. iOS PWA standalone has known bugs where dvh and
+     env(safe-area-inset-bottom) recalculate during scroll/touch — produces
+     "extra space at bottom that drag-fills and sticks." Outer ChatSurface
+     uses `fixed inset-0` to anchor against the viewport directly. */
+  html,
+  body {
+    @apply overflow-hidden overscroll-none;
+  }
   body {
     @apply bg-background text-foreground;
   }

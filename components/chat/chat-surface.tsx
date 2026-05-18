@@ -69,14 +69,14 @@ export const ChatSurface = (): React.JSX.Element => {
 
   // Avoid a flash of empty thread while we look up the most-recent chat.
   // One Dexie read; typically <50ms.
-  if (!bootstrapped) return <main className="min-h-dvh" />;
+  if (!bootstrapped) return <main className="fixed inset-0" />;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ShowBoardToolUI />
       <ShowOptionsToolUI />
       <EditPositionToolUI />
-      <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)]">
+      <div className="fixed inset-0 flex flex-col pt-[env(safe-area-inset-top)]">
         <ChatListDrawer currentThreadId={threadId} onSelect={setThreadId} />
         <BoardStage expanded={boardExpanded} onExpandedChange={setBoardExpanded} />
         <main className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]">
