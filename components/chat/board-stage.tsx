@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAuiState } from "@assistant-ui/react";
 import { parseFen } from "chessops/fen";
 import { ChevronUpIcon, ChevronDownIcon } from "lucide-react";
@@ -58,10 +58,25 @@ export function BoardStage({
   expanded,
   onExpandedChange,
 }: BoardStageProps): React.JSX.Element | null {
-  // useAuiState subscribes reactively — re-renders whenever thread.messages changes.
-  // s.thread.messages is readonly MessageState[] per ThreadState type.
+  // useAuiState subscribes reactively — re-renders whenever thread.messages
+  // changes. `messages` is readonly ThreadMessage[] per @assistant-ui/core's
+  // ThreadState type (MessageState extends ThreadMessage, hence the typed
+  // narrow in findLatestShowBoard).
   const messages = useAuiState((s) => s.thread.messages);
   const latest = useMemo(() => findLatestShowBoard(messages), [messages]);
+
+  // Auto-expand when the agent renders a NEW position (different FEN from
+  // before). Without this, a user who collapsed the strip would miss the
+  // next showBoard if the agent kept narrating with the strip closed.
+  // Tracks previous FEN in a ref so we don't fire on mount or on re-renders
+  // where the FEN is unchanged.
+  const prevFenRef = useRef<string | undefined>(latest?.fen);
+  useEffect(() => {
+    if (latest?.fen !== undefined && latest.fen !== prevFenRef.current) {
+      prevFenRef.current = latest.fen;
+      onExpandedChange(true);
+    }
+  }, [latest?.fen, onExpandedChange]);
 
   if (!latest) return null;
 
