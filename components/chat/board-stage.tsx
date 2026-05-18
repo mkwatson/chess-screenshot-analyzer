@@ -84,7 +84,7 @@ export function BoardStage({
     <div className="border-border bg-background sticky top-0 z-10 flex flex-col items-center border-b">
       {expanded ? (
         <>
-          <div className="flex w-full justify-center px-4 pt-2">
+          <div className="flex w-full justify-center px-12 pt-2">
             <Board fen={latest.fen} arrows={toBoardArrows(latest.arrows)} />
           </div>
           {latest.caption !== undefined && latest.caption !== "" ? (

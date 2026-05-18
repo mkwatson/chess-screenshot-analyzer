@@ -57,7 +57,7 @@ export const ChatListDrawer = ({
         <Button
           variant="ghost"
           size="icon"
-          className="bg-background/85 supports-[backdrop-filter]:bg-background/70 fixed top-[env(safe-area-inset-top)] left-2 z-20 rounded-full border shadow-sm backdrop-blur"
+          className="fixed top-[env(safe-area-inset-top)] left-2 z-20"
           aria-label="Open chat list"
         >
           <MenuIcon className="size-5" />
