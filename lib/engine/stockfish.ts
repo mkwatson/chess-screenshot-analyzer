@@ -1,4 +1,4 @@
-import { Stockfish, type StockfishInfo } from "@se-oss/stockfish";
+import { Stockfish } from "@se-oss/stockfish";
 import { AnalyzeInputSchema, type AnalyzeOutput } from "./types";
 
 // Module-scope warm singleton. On Vercel Fluid Compute, this engine persists
@@ -22,6 +22,12 @@ function getEngine(): Promise<Stockfish> {
 
 const TIMEOUT_MS = 10_000;
 
+interface Line {
+  readonly move: string;
+  readonly evalCp: number | null;
+  readonly mate: number | null;
+}
+
 export async function analyzePosition(rawInput: unknown): Promise<AnalyzeOutput> {
   // Defensive runtime validation (the API route validates separately,
   // but unit tests + future direct callers depend on the same contract).
@@ -33,53 +39,56 @@ export async function analyzePosition(rawInput: unknown): Promise<AnalyzeOutput>
       detail: parsed.error.message,
     };
   }
-  const { fen, depth } = parsed.data;
+  const { fen, depth, multiPV, candidateMove } = parsed.data;
 
   const engine = await getEngine();
 
-  const run = inFlight.then(async () => {
-    let lastDepth = 0;
-    let lastCp: number | null = null;
-
-    const infoListener = (info: StockfishInfo): void => {
-      if (typeof info.depth === "number") lastDepth = info.depth;
-      if (info.score?.type === "cp" && typeof info.score.value === "number") {
-        lastCp = info.score.value;
-      }
-    };
-    engine.on("info", infoListener);
-
-    let bestMove = "";
-    try {
-      const result = await Promise.race([
-        engine.analyze(fen, depth, 1),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("engine_timeout")), TIMEOUT_MS),
-        ),
-      ]);
-      bestMove = result.bestmove;
-    } finally {
-      engine.off("info", infoListener);
-    }
-
-    return { bestMove, depth: lastDepth, evalCp: lastCp };
-  });
+  const run = inFlight.then(() =>
+    Promise.race([
+      engine.analyze(fen, depth, multiPV),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("engine_timeout")), TIMEOUT_MS),
+      ),
+    ]),
+  );
 
   inFlight = run.catch(() => {
     // Swallow — the awaiter below re-throws via `await run` for proper handling.
   });
 
   try {
-    const { bestMove, depth: reachedDepth, evalCp } = await run;
-    if (!bestMove) {
-      return { ok: false, reason: "engine_error", detail: "No bestmove" };
+    const result = await run;
+    if (result.lines.length === 0 || result.bestmove === "") {
+      return { ok: false, reason: "engine_error", detail: "No lines returned" };
     }
+
+    // Library returns lines in multipv order (1 = best). Map to our shape.
+    const lines: Line[] = result.lines.map((l) => {
+      const firstMove = l.pv.split(" ")[0] ?? "";
+      return {
+        move: firstMove,
+        evalCp: l.score.type === "cp" ? l.score.value : null,
+        mate: l.score.type === "mate" ? l.score.value : null,
+      };
+    });
+
+    const [best, ...alternatives] = lines;
+    if (best === undefined) {
+      return { ok: false, reason: "engine_error", detail: "No best line" };
+    }
+
+    const candidateVerdict =
+      candidateMove !== undefined ? buildCandidateVerdict(candidateMove, best, lines) : undefined;
+
     return {
       ok: true,
       data: {
-        bestMove,
-        evalCp,
-        depth: reachedDepth || depth,
+        bestMove: best.move,
+        bestEvalCp: best.evalCp,
+        bestMate: best.mate,
+        alternatives,
+        ...(candidateVerdict !== undefined && { candidateVerdict }),
+        depth: result.lines[0]?.depth ?? depth,
       },
     };
   } catch (e) {
@@ -90,3 +99,49 @@ export async function analyzePosition(rawInput: unknown): Promise<AnalyzeOutput>
     return { ok: false, reason: "engine_error", detail: message };
   }
 }
+
+const buildCandidateVerdict = (
+  candidate: string,
+  best: Line,
+  lines: readonly Line[],
+): {
+  move: string;
+  evalCp: number | null;
+  mate: number | null;
+  rank: number | null;
+  evalLossCp: number | null;
+  inTopN: boolean;
+} => {
+  const idx = lines.findIndex((l) => l.move === candidate);
+  if (idx === -1) {
+    return {
+      move: candidate,
+      evalCp: null,
+      mate: null,
+      rank: null,
+      evalLossCp: null,
+      inTopN: false,
+    };
+  }
+  const line = lines[idx];
+  if (line === undefined) {
+    return {
+      move: candidate,
+      evalCp: null,
+      mate: null,
+      rank: null,
+      evalLossCp: null,
+      inTopN: false,
+    };
+  }
+  const evalLossCp =
+    best.evalCp !== null && line.evalCp !== null ? best.evalCp - line.evalCp : null;
+  return {
+    move: candidate,
+    evalCp: line.evalCp,
+    mate: line.mate,
+    rank: idx + 1,
+    evalLossCp,
+    inTopN: true,
+  };
+};

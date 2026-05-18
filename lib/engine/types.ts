@@ -20,18 +20,39 @@ export const FenSchema = z
   );
 export type Fen = z.infer<typeof FenSchema>;
 
+const UciMoveSchema = z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/, "Invalid UCI move");
+
 export const AnalyzeInputSchema = z.object({
   fen: FenSchema,
   depth: z.number().int().min(8).max(22).default(14),
+  multiPV: z.number().int().min(1).max(10).default(3),
+  candidateMove: UciMoveSchema.optional(),
 });
 export type AnalyzeInput = z.infer<typeof AnalyzeInputSchema>;
+
+const LineSchema = z.object({
+  move: UciMoveSchema,
+  evalCp: z.number().int().nullable(),
+  mate: z.number().int().nullable(),
+});
+
+const CandidateVerdictSchema = z.object({
+  move: UciMoveSchema,
+  evalCp: z.number().int().nullable(),
+  mate: z.number().int().nullable(),
+  rank: z.number().int().nullable(),
+  evalLossCp: z.number().int().nullable(),
+  inTopN: z.boolean(),
+});
 
 const AnalyzeSuccessSchema = z.object({
   ok: z.literal(true),
   data: z.object({
-    bestMove: z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/, "Invalid UCI move"),
-    evalCp: z.number().int().nullable(),
-    mate: z.number().int().nullable().optional(),
+    bestMove: UciMoveSchema,
+    bestEvalCp: z.number().int().nullable(),
+    bestMate: z.number().int().nullable(),
+    alternatives: z.array(LineSchema),
+    candidateVerdict: CandidateVerdictSchema.optional(),
     depth: z.number().int(),
   }),
 });
