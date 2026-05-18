@@ -57,7 +57,7 @@ export const ChatListDrawer = ({
         <Button
           variant="ghost"
           size="icon"
-          className="fixed top-[env(safe-area-inset-top)] left-2 z-10"
+          className="fixed top-[env(safe-area-inset-top)] left-2 z-20"
           aria-label="Open chat list"
         >
           <MenuIcon className="size-5" />
