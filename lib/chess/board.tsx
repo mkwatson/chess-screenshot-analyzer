@@ -100,7 +100,7 @@ export function Board({ fen, orientation = "white", viewOnly = true, arrows }: B
   }, [fen, orientation, viewOnly, arrows]);
 
   return (
-    <div className="aspect-square w-full max-w-[min(85vw,420px)]">
+    <div className="aspect-square w-full max-w-[min(85vw,420px,45dvh)]">
       <div ref={hostRef} className="h-full w-full touch-none" />
     </div>
   );

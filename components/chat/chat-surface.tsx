@@ -76,7 +76,7 @@ export const ChatSurface = (): React.JSX.Element => {
       <ShowBoardToolUI />
       <ShowOptionsToolUI />
       <EditPositionToolUI />
-      <div className="flex h-dvh flex-col">
+      <div className="flex h-dvh flex-col pt-[env(safe-area-inset-top)]">
         <ChatListDrawer currentThreadId={threadId} onSelect={setThreadId} />
         <BoardStage expanded={boardExpanded} onExpandedChange={setBoardExpanded} />
         <main className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]">
